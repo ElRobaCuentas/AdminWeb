@@ -167,6 +167,46 @@ body {
   margin-top: 8px;
 }
 
+.label {
+  font-weight: 700;
+  font-size: 14px;
+  margin: 10px 0 8px;
+}
+
+.selector-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.chip {
+  padding: 10px 15px;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #555;
+}
+
+.chip-selected {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: #fff;
+}
+
+.cancel-button {
+  background: #e53935;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .menu-list {
   display: flex;
   flex-direction: column;

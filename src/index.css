@@ -79,6 +79,94 @@ body {
   cursor: default;
 }
 
+.panel {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.panel-wide {
+  max-width: 640px;
+}
+
+.screen-scroll {
+  align-items: flex-start;
+  overflow-y: auto;
+}
+
+.back-button {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+
+.form-section {
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 8px;
+}
+
+.section-title {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.form-message {
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.form-message.exito {
+  color: #2e7d32;
+}
+
+.form-message.error {
+  color: #c0392b;
+}
+
+.list {
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+
+.card-info {
+  flex: 1;
+}
+
+.card-title {
+  font-weight: 600;
+}
+
+.card-subtitle {
+  font-size: 13px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.empty-text {
+  color: #666;
+  margin-top: 8px;
+}
+
 .menu-list {
   display: flex;
   flex-direction: column;

@@ -1,122 +1,93 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useEffect, useState } from 'react';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { firebaseAuth } from './shared/config/firebase';
+import { existeAdministrador } from './features/admin/services/admin_check';
+import { LoginScreen } from './screen/LoginScreen';
+import { AdminNavigator } from './navigation/AdminNavigator';
 
-function App() {
-  const [count, setCount] = useState(0)
+const App = () => {
+  const [initializing, setInitializing] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [roleError, setRoleError] = useState(false);
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async currentUser => {
+      setUser(currentUser);
+      if (currentUser) {
+        try {
+          setIsAdmin(await existeAdministrador(currentUser.uid));
+        } catch {
+          setRoleError(true);
+        }
+      } else {
+        setIsAdmin(null);
+        setRoleError(false);
+      }
+      setInitializing(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleReintentar = async () => {
+    if (!user) return;
+    setRoleError(false);
+    try {
+      setIsAdmin(await existeAdministrador(user.uid));
+    } catch {
+      setRoleError(true);
+    }
+  };
+
+  const handleCerrarSesion = async () => {
+    await signOut(firebaseAuth);
+  };
+
+  if (initializing) {
+    return <div className="screen">Verificando sesión…</div>;
+  }
+
+  if (roleError) {
+    return (
+      <div className="screen">
+        <div className="panel">
+          <h1 className="panel-title">No se pudo verificar tu cuenta</h1>
+          <p className="panel-subtitle">
+            Verifica tu conexión e intenta de nuevo.
           </p>
+          <button className="form-button" onClick={handleReintentar}>
+            Reintentar
+          </button>
+          <button className="form-button" onClick={handleCerrarSesion}>
+            Cerrar Sesión
+          </button>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </div>
+    );
+  }
 
-      <div className="ticks"></div>
+  if (!user) {
+    return <LoginScreen />;
+  }
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+  if (!isAdmin) {
+    return (
+      <div className="screen">
+        <div className="panel">
+          <h1 className="panel-title">No autorizado</h1>
+          <p className="panel-subtitle">
+            Esta cuenta no tiene permisos de administración. El panel web es
+            exclusivo para administradores.
+          </p>
+          <button className="form-button" onClick={handleCerrarSesion}>
+            Cerrar Sesión
+          </button>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      </div>
+    );
+  }
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
-}
+  return <AdminNavigator />;
+};
 
-export default App
+export default App;

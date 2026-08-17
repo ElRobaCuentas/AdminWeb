@@ -78,3 +78,41 @@ body {
   opacity: 0.6;
   cursor: default;
 }
+
+.menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu-button {
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.menu-button span {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  color: #666;
+  margin-top: 2px;
+}
+
+.logout-button {
+  width: 100%;
+  padding: 12px;
+  background-color: #e53935;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 18px;
+}

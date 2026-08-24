@@ -9,6 +9,14 @@ interface Mensaje {
   texto: string;
 }
 
+const formatCreatedAt = (ts: number) =>
+  new Date(ts).toLocaleString('es-PE', {
+    timeZone: 'America/Lima',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: true,
+  });
+
 export const AsignacionesScreen = () => {
   const navigate = useNavigate();
   const [choferes, setChoferes] = useState<Chofer[]>([]);
@@ -137,6 +145,9 @@ export const AsignacionesScreen = () => {
                   <div className="card-info">
                     <p className="card-title">{choferNombre}</p>
                     <p className="card-subtitle">Bus asignado: {item.busId}</p>
+                    {!!item.createdAt && (
+                      <p className="card-subtitle">Creada: {formatCreatedAt(item.createdAt)}</p>
+                    )}
                   </div>
                   <button
                     className="cancel-button"

@@ -28,6 +28,8 @@ export interface Asignacion {
   busId: string;
   fecha: string;
   activo: boolean;
+  createdAt?: number;
+  createdBy?: string;
 }
 
 const CHOFERES_PATH = '/choferes';
@@ -245,12 +247,17 @@ export const AdminService = {
       if (yaAsignadoBus) throw new Error('Este bus ya fue asignado a otro conductor hoy.');
     }
 
+    const adminUid = getAuth().currentUser?.uid;
+    if (!adminUid) throw new Error('No hay administrador autenticado.');
+
     const newRef = push(dbRef);
     await set(newRef, {
       choferId,
       busId,
       fecha: today,
       activo: true,
+      createdAt: Date.now(),
+      createdBy: adminUid,
     });
     return true;
   },

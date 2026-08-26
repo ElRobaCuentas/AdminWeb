@@ -125,7 +125,12 @@ export const ChoferesScreen = () => {
                   role="switch"
                   aria-label={`Activo: ${item.nombre} ${item.apellidos}`}
                   checked={item.activo}
-                  onChange={() => AdminService.toggleChoferStatus(item.dni, item.activo)}
+                  onChange={() => {
+                    const accion = item.activo ? 'desactivar' : 'activar';
+                    if (window.confirm(`¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?`)) {
+                      AdminService.toggleChoferStatus(item.dni, item.activo);
+                    }
+                  }}
                 />
               </li>
             ))}

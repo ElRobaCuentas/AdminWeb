@@ -244,3 +244,36 @@ body {
   cursor: pointer;
   margin-top: 18px;
 }
+
+/* Toggle switch para role="switch" */
+input[role="switch"] {
+  appearance: none;
+  width: 44px;
+  height: 24px;
+  background: #ccc;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+input[role="switch"]::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+
+input[role="switch"]:checked {
+  background: #1a73e8;
+}
+
+input[role="switch"]:checked::before {
+  transform: translateX(20px);
+}

@@ -144,9 +144,12 @@ export const BusesScreen = () => {
                   role="switch"
                   aria-label={`Activo: ${item.placa}`}
                   checked={item.activo}
-                  onChange={e =>
-                    AdminService.toggleBusStatus(item.placa, e.target.checked).catch(() => {})
-                  }
+                  onChange={e => {
+                    const accion = item.activo ? 'desactivar' : 'activar';
+                    if (window.confirm(`¿Estás seguro que querés ${accion} el bus ${item.placa}?`)) {
+                      AdminService.toggleBusStatus(item.placa, e.target.checked);
+                    }
+                  }}
                 />
               </li>
             ))}

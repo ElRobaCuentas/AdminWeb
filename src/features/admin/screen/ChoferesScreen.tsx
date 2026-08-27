@@ -18,6 +18,12 @@ export const ChoferesScreen = () => {
   const [nombre, setNombre] = useState('');
   const [apellidos, setApellidos] = useState('');
 
+  // Estado para edición
+  const [editingDni, setEditingDni] = useState<string | null>(null);
+  const [editNombre, setEditNombre] = useState('');
+  const [editApellidos, setEditApellidos] = useState('');
+  const [saving, setSaving] = useState(false);
+
   // 1. Cargar choferes en tiempo real
   useEffect(() => {
     const unsubscribe = AdminService.subscribeToChoferes(data => {
@@ -50,6 +56,40 @@ export const ChoferesScreen = () => {
       setMensaje({ tipo: 'error', texto: (error as Error).message });
     } finally {
       setCreating(false);
+    }
+  };
+
+  // 3. Manejar Edición
+  const handleEdit = async () => {
+    if (!editingDni || !editNombre || !editApellidos) return;
+    setSaving(true);
+    try {
+      await AdminService.updateChofer(editingDni, { nombre: editNombre, apellidos: editApellidos });
+      setEditingDni(null);
+      setMensaje({ tipo: 'exito', texto: 'Conductor actualizado correctamente.' });
+    } catch (error) {
+      setMensaje({ tipo: 'error', texto: (error as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 4. Manejar Eliminación
+  const handleDelete = async (chofer: Chofer) => {
+    setMensaje(null);
+    const tieneAsignacion = await AdminService.hasActiveAssignment(chofer.dni);
+    if (tieneAsignacion) {
+      setMensaje({ tipo: 'error', texto: 'Este conductor tiene una asignación activa. Cancele la asignación primero.' });
+      return;
+    }
+    if (!window.confirm(`¿Eliminar a ${chofer.nombre} ${chofer.apellidos}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      await AdminService.deleteChofer(chofer.dni);
+      setMensaje({ tipo: 'exito', texto: `Conductor ${chofer.nombre} eliminado correctamente.` });
+    } catch (error) {
+      setMensaje({ tipo: 'error', texto: (error as Error).message });
     }
   };
 
@@ -116,22 +156,73 @@ export const ChoferesScreen = () => {
           <ul className="list">
             {choferes.map(item => (
               <li key={item.dni} className="card">
-                <div className="card-info">
-                  <p className="card-title">{item.nombre} {item.apellidos}</p>
-                  <p className="card-subtitle">DNI: {item.dni}</p>
-                </div>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label={`Activo: ${item.nombre} ${item.apellidos}`}
-                  checked={item.activo}
-                  onChange={() => {
-                    const accion = item.activo ? 'desactivar' : 'activar';
-                    if (window.confirm(`¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?`)) {
-                      AdminService.toggleChoferStatus(item.dni, item.activo);
-                    }
-                  }}
-                />
+                {editingDni === item.dni ? (
+                  <div className="card-edit-form">
+                    <div className="form-group">
+                      <label className="form-label">Nombres</label>
+                      <input
+                        className="form-input"
+                        value={editNombre}
+                        onChange={e => setEditNombre(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Apellidos</label>
+                      <input
+                        className="form-input"
+                        value={editApellidos}
+                        onChange={e => setEditApellidos(e.target.value)}
+                      />
+                    </div>
+                    <div className="card-actions-row">
+                      <button className="form-button-sm" onClick={handleEdit} disabled={saving}>
+                        {saving ? 'Guardando…' : 'Guardar'}
+                      </button>
+                      <button className="form-button-sm form-button-cancel" onClick={() => setEditingDni(null)}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="card-info">
+                      <p className="card-title">{item.nombre} {item.apellidos}</p>
+                      <p className="card-subtitle">DNI: {item.dni}</p>
+                    </div>
+                    <div className="card-actions">
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        aria-label={`Activo: ${item.nombre} ${item.apellidos}`}
+                        checked={item.activo}
+                        onChange={() => {
+                          const accion = item.activo ? 'desactivar' : 'activar';
+                          if (window.confirm(`¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?`)) {
+                            AdminService.toggleChoferStatus(item.dni, item.activo);
+                          }
+                        }}
+                      />
+                      <button
+                        className="icon-button"
+                        title="Editar"
+                        onClick={() => {
+                          setEditingDni(item.dni);
+                          setEditNombre(item.nombre);
+                          setEditApellidos(item.apellidos);
+                        }}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="icon-button icon-button-danger"
+                        title="Eliminar"
+                        onClick={() => handleDelete(item)}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </>
+                )}
               </li>
             ))}
           </ul>

@@ -1,7 +1,10 @@
-import { getApp, initializeApp, type FirebaseApp } from 'firebase/app';
-import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
+import { deleteApp, initializeApp } from 'firebase/app';
 import {
-  get, onValue, push, ref, set, update,
+  createUserWithEmailAndPassword, getAuth, initializeAuth, inMemoryPersistence,
+  signInWithEmailAndPassword, signOut, deleteUser,
+} from 'firebase/auth';
+import {
+  get, onValue, push, ref, remove, set, update,
 } from 'firebase/database';
 import {
   firebaseConfig, firebaseDatabase,
@@ -16,9 +19,6 @@ export interface Chofer {
 
 export interface Bus {
   placa: string;
-  modelo: string;
-  marca: string;
-  anio: string;
   activo: boolean;
 }
 
@@ -79,22 +79,20 @@ export const AdminService = {
     const email = `${chofer.dni}@burritodriver.com`;
     const password = chofer.dni;
 
-    let secondaryApp: FirebaseApp;
-    try {
-      secondaryApp = getApp('secondary');
-    } catch {
-      secondaryApp = initializeApp(firebaseConfig, 'secondary');
-    }
+    // App temporal con auth en memoria (no toca localStorage del admin)
+    const tempApp = initializeApp(firebaseConfig, `reg_${Date.now()}`);
+    const tempAuth = initializeAuth(tempApp, { persistence: inMemoryPersistence });
 
     try {
-      const secondaryAuth = getAuth(secondaryApp);
-      const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-      await signOut(secondaryAuth);
+      const credential = await createUserWithEmailAndPassword(tempAuth, email, password);
+      await signOut(tempAuth);
+      await deleteApp(tempApp);
 
       await set(choferRef, {
         nombre: chofer.nombre.trim(),
         apellidos: chofer.apellidos.trim(),
         activo: true,
+        uid: credential.user.uid,
       });
       // Vinculo uid -> dni para la autorizacion RTDB de /ubicacion_buses (ADR-023)
       await set(
@@ -161,9 +159,6 @@ export const AdminService = {
     }
 
     await set(busRef, {
-      modelo: busData.modelo.trim(),
-      marca: busData.marca.trim(),
-      anio: busData.anio.trim(),
       activo: true,
     });
 
@@ -273,5 +268,77 @@ export const AdminService = {
       console.error('Error cancelando asignación:', error);
       return false;
     }
+  },
+
+  // ============================
+  // EDICIÓN Y ELIMINACIÓN
+  // ============================
+
+  // 5. Verificar si un conductor tiene asignación activa HOY
+  hasActiveAssignment: async (dni: string): Promise<boolean> => {
+    const today = AdminService.getTodayDateString();
+    const snapshot = await get(ref(firebaseDatabase, ASIGNACIONES_PATH));
+    if (!snapshot.exists()) return false;
+    const data = snapshot.val();
+    return Object.values(data).some(
+      (a: any) => a.choferId === dni && a.fecha === today && a.activo === true,
+    );
+  },
+
+  // 6. Verificar si un bus tiene asignación activa HOY
+  hasActiveBusAssignment: async (placa: string): Promise<boolean> => {
+    const today = AdminService.getTodayDateString();
+    const snapshot = await get(ref(firebaseDatabase, ASIGNACIONES_PATH));
+    if (!snapshot.exists()) return false;
+    const data = snapshot.val();
+    return Object.values(data).some(
+      (a: any) => a.busId === placa && a.fecha === today && a.activo === true,
+    );
+  },
+
+  // 7. Editar conductor (nombre y apellidos)
+  updateChofer: async (dni: string, data: { nombre: string; apellidos: string }) => {
+    await update(ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`), {
+      nombre: data.nombre.trim(),
+      apellidos: data.apellidos.trim(),
+    });
+    return true;
+  },
+
+  // 8. Eliminar conductor (RTDB primero con auth admin, luego Auth del conductor)
+  deleteChofer: async (dni: string) => {
+    // Leer uid desde /choferes/{dni} (no de /choferes_uids, que tiene .read: false)
+    const choferSnapshot = await get(ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`));
+    const uid = choferSnapshot.exists() ? (choferSnapshot.val().uid as string | undefined) : null;
+
+    // Eliminar registros de RTDB (con auth de admin activa)
+    await remove(ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`));
+    if (uid) {
+      await remove(ref(firebaseDatabase, `${CHOFERES_UIDS_PATH}/${uid}`));
+    }
+
+    // Eliminar cuenta de Auth del conductor (app temporal con auth en memoria)
+    const email = `${dni}@burritodriver.com`;
+    const tempApp = initializeApp(firebaseConfig, `del_${Date.now()}`);
+    const tempAuth = initializeAuth(tempApp, { persistence: inMemoryPersistence });
+
+    try {
+      await signInWithEmailAndPassword(tempAuth, email, dni);
+      await deleteUser(tempAuth.currentUser!);
+    } catch {
+      // Auth ya no existe o falló — la eliminación RTDB ya se hizo
+    } finally {
+      try { await signOut(tempAuth); } catch { /* ignore */ }
+      try { await deleteApp(tempApp); } catch { /* ignore */ }
+    }
+
+    return true;
+  },
+
+  // 9. Eliminar bus (RTDB + ubicacion_buses)
+  deleteBus: async (placa: string) => {
+    await remove(ref(firebaseDatabase, `${BUSES_PATH}/${placa}`));
+    await remove(ref(firebaseDatabase, `/ubicacion_buses/${placa}`));
+    return true;
   },
 };

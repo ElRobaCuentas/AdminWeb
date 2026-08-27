@@ -15,9 +15,6 @@ export const BusesScreen = () => {
   const [mensaje, setMensaje] = useState<Mensaje | null>(null);
 
   const [placa, setPlaca] = useState('');
-  const [marca, setMarca] = useState('');
-  const [modelo, setModelo] = useState('');
-  const [anio, setAnio] = useState('');
 
   // 1. Cargar buses en tiempo real
   useEffect(() => {
@@ -31,8 +28,8 @@ export const BusesScreen = () => {
   // 2. Manejar Creación
   const handleCreate = async () => {
     setMensaje(null);
-    if (!placa || !modelo || !marca || !anio) {
-      setMensaje({ tipo: 'error', texto: 'Todos los campos son obligatorios' });
+    if (!placa) {
+      setMensaje({ tipo: 'error', texto: 'La placa es obligatoria' });
       return;
     }
 
@@ -45,19 +42,32 @@ export const BusesScreen = () => {
     try {
       await AdminService.createBus({
         placa: placa.toUpperCase().trim(),
-        modelo: modelo.trim(),
-        marca: marca.trim(),
-        anio: anio.trim(),
       });
       setMensaje({ tipo: 'exito', texto: 'Bus registrado correctamente en la flota.' });
       setPlaca('');
-      setMarca('');
-      setModelo('');
-      setAnio('');
     } catch (error) {
       setMensaje({ tipo: 'error', texto: (error as Error).message });
     } finally {
       setCreating(false);
+    }
+  };
+
+  // 3. Manejar Eliminación
+  const handleDelete = async (bus: Bus) => {
+    setMensaje(null);
+    const tieneAsignacion = await AdminService.hasActiveBusAssignment(bus.placa);
+    if (tieneAsignacion) {
+      setMensaje({ tipo: 'error', texto: 'Este bus tiene una asignación activa. Cancele la asignación primero.' });
+      return;
+    }
+    if (!window.confirm(`¿Eliminar el bus ${bus.placa}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      await AdminService.deleteBus(bus.placa);
+      setMensaje({ tipo: 'exito', texto: `Bus ${bus.placa} eliminado correctamente.` });
+    } catch (error) {
+      setMensaje({ tipo: 'error', texto: (error as Error).message });
     }
   };
 
@@ -86,38 +96,6 @@ export const BusesScreen = () => {
               onChange={e => setPlaca(e.target.value)}
             />
           </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="bus-marca">Marca (Ej: Mercedes-Benz)</label>
-            <input
-              id="bus-marca"
-              className="form-input"
-              placeholder="Mercedes-Benz"
-              value={marca}
-              onChange={e => setMarca(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="bus-modelo">Modelo (Ej: Sprinter)</label>
-            <input
-              id="bus-modelo"
-              className="form-input"
-              placeholder="Sprinter"
-              value={modelo}
-              onChange={e => setModelo(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="bus-anio">Año (Ej: 2022)</label>
-            <input
-              id="bus-anio"
-              className="form-input"
-              placeholder="2022"
-              inputMode="numeric"
-              maxLength={4}
-              value={anio}
-              onChange={e => setAnio(e.target.value)}
-            />
-          </div>
           <button
             className="form-button"
             onClick={handleCreate}
@@ -137,20 +115,28 @@ export const BusesScreen = () => {
               <li key={item.placa} className="card">
                 <div className="card-info">
                   <p className="card-title">{item.placa}</p>
-                  <p className="card-subtitle">{item.marca} {item.modelo} - {item.anio}</p>
                 </div>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label={`Activo: ${item.placa}`}
-                  checked={item.activo}
-                  onChange={e => {
-                    const accion = item.activo ? 'desactivar' : 'activar';
-                    if (window.confirm(`¿Estás seguro que querés ${accion} el bus ${item.placa}?`)) {
-                      AdminService.toggleBusStatus(item.placa, e.target.checked);
-                    }
-                  }}
-                />
+                <div className="card-actions">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label={`Activo: ${item.placa}`}
+                    checked={item.activo}
+                    onChange={e => {
+                      const accion = item.activo ? 'desactivar' : 'activar';
+                      if (window.confirm(`¿Estás seguro que querés ${accion} el bus ${item.placa}?`)) {
+                        AdminService.toggleBusStatus(item.placa, e.target.checked);
+                      }
+                    }}
+                  />
+                  <button
+                    className="icon-button icon-button-danger"
+                    title="Eliminar"
+                    onClick={() => handleDelete(item)}
+                  >
+                    🗑️
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

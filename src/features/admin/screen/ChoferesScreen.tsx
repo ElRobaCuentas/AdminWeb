@@ -108,12 +108,10 @@ export const ChoferesScreen = () => {
         <div className="form-section">
           <h2 className="section-title">Registrar nuevo chofer</h2>
           <div className="form-group">
-            <label className="form-label" htmlFor="chofer-dni">DNI (8 dígitos)</label>
+            <label className="form-label" htmlFor="chofer-dni">DNI</label>
             <input
               id="chofer-dni"
               className="form-input"
-              placeholder="Ej. 12345678"
-              inputMode="numeric"
               maxLength={8}
               value={dni}
               onChange={e => setDni(e.target.value)}
@@ -124,7 +122,6 @@ export const ChoferesScreen = () => {
             <input
               id="chofer-nombre"
               className="form-input"
-              placeholder="Nombres"
               value={nombre}
               onChange={e => setNombre(e.target.value)}
             />
@@ -133,8 +130,7 @@ export const ChoferesScreen = () => {
             <label className="form-label" htmlFor="chofer-apellidos">Apellidos</label>
             <input
               id="chofer-apellidos"
-              className="form-input"
-              placeholder="Apellidos"
+              className="form-input"  
               value={apellidos}
               onChange={e => setApellidos(e.target.value)}
             />

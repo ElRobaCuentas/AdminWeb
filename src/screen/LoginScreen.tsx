@@ -53,7 +53,6 @@ export const LoginScreen = () => {
           <input
             id="dni"
             className="form-input"
-            placeholder="Ej. 12345678"
             inputMode="numeric"
             maxLength={12}
             value={dni}
@@ -67,7 +66,6 @@ export const LoginScreen = () => {
           <input
             id="password"
             className="form-input"
-            placeholder="Ingresa tu contraseña"
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}

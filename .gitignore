@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Firebase (caché local de deploy)
+.firebase/
+
 # Environment variables
 .env
 .env.local

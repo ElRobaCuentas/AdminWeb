@@ -21,7 +21,7 @@ export const LoginScreen = () => {
 
     setLoading(true);
     try {
-      const email = `${dni.trim()}@burritodriver.com`;
+      const email = `${dni.trim()}@admin.com`;
       await signInWithEmailAndPassword(firebaseAuth, email, password);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;

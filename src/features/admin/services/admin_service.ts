@@ -32,10 +32,22 @@ export interface Asignacion {
   createdBy?: string;
 }
 
+export interface Administrador {
+  uid: string;
+  dni?: string;
+  nombres?: string;
+  apellidos?: string;
+  correo?: string;
+  activo?: boolean;
+  creadoEn?: number;
+  creadoPor?: string | null;
+}
+
 const CHOFERES_PATH = '/choferes';
 const BUSES_PATH = '/buses';
 const ASIGNACIONES_PATH = '/asignaciones';
 const CHOFERES_UIDS_PATH = '/choferes_uids';
+const ADMINISTRADORES_PATH = '/administradores';
 
 export const AdminService = {
   // ============================
@@ -76,7 +88,7 @@ export const AdminService = {
       throw new Error('Ya existe un conductor registrado con este DNI.');
     }
 
-    const email = `${chofer.dni}@burritodriver.com`;
+    const email = `${chofer.dni}@conductor.com`;
     const password = chofer.dni;
 
     // App temporal con auth en memoria (no toca localStorage del admin)
@@ -318,7 +330,7 @@ export const AdminService = {
     }
 
     // Eliminar cuenta de Auth del conductor (app temporal con auth en memoria)
-    const email = `${dni}@burritodriver.com`;
+    const email = `${dni}@conductor.com`;
     const tempApp = initializeApp(firebaseConfig, `del_${Date.now()}`);
     const tempAuth = initializeAuth(tempApp, { persistence: inMemoryPersistence });
 
@@ -340,5 +352,118 @@ export const AdminService = {
     await remove(ref(firebaseDatabase, `${BUSES_PATH}/${placa}`));
     await remove(ref(firebaseDatabase, `/ubicacion_buses/${placa}`));
     return true;
+  },
+
+  // ============================
+  // GESTIÓN DE ADMINS
+  // ============================
+
+  // 10. Crear Admin (Auth + RTDB)
+  createAdmin: async (dni: string, nombres: string, apellidos: string, password: string) => {
+    const adminRef = ref(firebaseDatabase, `${ADMINISTRADORES_PATH}`);
+
+    // Verificar que no exista otro admin con el mismo DNI
+    const snapshot = await get(adminRef);
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const yaExiste = Object.values(data).some(
+        (a: any) => a.dni === dni,
+      );
+      if (yaExiste) throw new Error('Ya existe un administrador registrado con este DNI.');
+    }
+
+    const email = `${dni}@admin.com`;
+
+    // App temporal con auth en memoria (no toca localStorage del admin actual)
+    const tempApp = initializeApp(firebaseConfig, `admin_${Date.now()}`);
+    const tempAuth = initializeAuth(tempApp, { persistence: inMemoryPersistence });
+
+    // Bloque 1: crear la cuenta Auth (app temporal)
+    let credential;
+    try {
+      credential = await createUserWithEmailAndPassword(tempAuth, email, password);
+      await signOut(tempAuth);
+      await deleteApp(tempApp);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'auth/email-already-in-use') {
+        throw new Error(
+          `Ya existe una cuenta de autenticación con el correo ${email} sin su nodo en la base de datos. ` +
+            'Bórrala desde la consola de Firebase (Authentication) e inténtalo de nuevo.',
+        );
+      }
+      throw new Error(
+        `Error al crear la cuenta de autenticación: ${(error as Error).message}`,
+      );
+    }
+
+    // Bloque 2: escribir el nodo en /administradores (RTDB, app principal)
+    try {
+      await set(
+        ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${credential.user.uid}`),
+        {
+          dni,
+          nombres: nombres.trim(),
+          apellidos: apellidos.trim(),
+          correo: email,
+          creadoEn: Date.now(),
+          creadoPor: getAuth().currentUser?.uid ?? null,
+        },
+      );
+      return true;
+    } catch (error) {
+      throw new Error(
+        `Error al guardar los datos del administrador: ${(error as Error).message}`,
+      );
+    }
+  },
+
+  // 11. Suscripción en tiempo real a administradores
+  subscribeToAdministradores: (onUpdate: (admins: Administrador[]) => void) => {
+    const dbRef = ref(firebaseDatabase, ADMINISTRADORES_PATH);
+    const unsubscribe = onValue(
+      dbRef,
+      snapshot => {
+        const data = snapshot.val();
+        if (!data) {
+          onUpdate([]);
+          return;
+        }
+        const parsed = Object.keys(data).map(key => ({
+          uid: key,
+          ...data[key],
+        }));
+        onUpdate(parsed);
+      },
+      error => {
+        console.error('[Firebase Error - Administradores]:', error);
+        onUpdate([]);
+      },
+    );
+    return unsubscribe;
+  },
+
+  // 12. Editar admin (nombre/apellidos)
+  updateAdmin: async (uid: string, data: { nombres: string; apellidos: string }) => {
+    await update(ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${uid}`), {
+      nombres: data.nombres.trim(),
+      apellidos: data.apellidos.trim(),
+    });
+    return true;
+  },
+
+  // 13. Eliminar admin (RTDB; la cuenta Auth se borra manualmente en consola)
+  deleteAdmin: async (uid: string) => {
+    await remove(ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${uid}`));
+    return true;
+  },
+
+  // 14. Obtener datos de un admin (para mostrar identidad en sesión)
+  getAdministrador: async (uid: string): Promise<Administrador | null> => {
+    const snapshot = await get(ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${uid}`));
+    if (!snapshot.exists()) return null;
+    const val = snapshot.val();
+    if (val === true) return { uid };
+    return { uid, ...val };
   },
 };

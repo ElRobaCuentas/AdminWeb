@@ -71,7 +71,11 @@ export const AsignacionesScreen = () => {
 
   const handleCancel = (id: string) => {
     if (window.confirm('¿El conductor dejará de manejar este bus hoy?')) {
-      AdminService.cancelarAsignacion(id);
+      AdminService.cancelarAsignacion(id).then(ok => {
+        if (!ok) {
+          setMensaje({ tipo: 'error', texto: 'No se pudo cancelar la asignación. Inténtalo de nuevo.' });
+        }
+      });
     }
   };
 

@@ -15,11 +15,15 @@ export interface Chofer {
   nombre: string;
   apellidos: string;
   activo: boolean;
+  creadoEn?: number;
+  creadoPor?: string | null;
 }
 
 export interface Bus {
   placa: string;
   activo: boolean;
+  creadoEn?: number;
+  creadoPor?: string | null;
 }
 
 export interface Asignacion {
@@ -96,7 +100,21 @@ export const AdminService = {
     const tempAuth = initializeAuth(tempApp, { persistence: inMemoryPersistence });
 
     try {
-      const credential = await createUserWithEmailAndPassword(tempAuth, email, password);
+      let credential;
+      try {
+        credential = await createUserWithEmailAndPassword(tempAuth, email, password);
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code === 'auth/email-already-in-use') {
+          throw new Error(
+            `Ya existe una cuenta de autenticación con el correo ${email} sin su nodo en la base de datos. ` +
+              'Bórrala desde la consola de Firebase (Authentication) e inténtalo de nuevo.',
+          );
+        }
+        throw new Error(
+          `Error al crear la cuenta de autenticación: ${(error as Error).message}`,
+        );
+      }
       await signOut(tempAuth);
       await deleteApp(tempApp);
 
@@ -105,6 +123,8 @@ export const AdminService = {
         apellidos: chofer.apellidos.trim(),
         activo: true,
         uid: credential.user.uid,
+        creadoEn: Date.now(),
+        creadoPor: getAuth().currentUser?.uid ?? null,
       });
       // Vinculo uid -> dni para la autorizacion RTDB de /ubicacion_buses (ADR-023)
       await set(
@@ -172,6 +192,8 @@ export const AdminService = {
 
     await set(busRef, {
       activo: true,
+      creadoEn: Date.now(),
+      creadoPor: getAuth().currentUser?.uid ?? null,
     });
 
     await set(ubicacionRef, {

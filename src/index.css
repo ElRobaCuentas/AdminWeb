@@ -188,6 +188,12 @@ body {
   margin-top: 2px;
 }
 
+.card-meta {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
 .empty-text {
   color: #666;
   margin-top: 8px;

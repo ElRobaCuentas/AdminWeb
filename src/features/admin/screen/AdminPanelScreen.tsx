@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { firebaseAuth } from '../../../shared/config/firebase';
 import { AdminService, type Administrador } from '../services/admin_service';
 
@@ -9,15 +9,17 @@ export const AdminPanelScreen = () => {
   const [adminData, setAdminData] = useState<Administrador | null>(null);
 
   useEffect(() => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) return;
-    let active = true;
-    AdminService.getAdministrador(uid).then(data => {
-      if (active) setAdminData(data);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, user => {
+      if (user) {
+        let active = true;
+        AdminService.getAdministrador(user.uid).then(data => {
+          if (active) setAdminData(data);
+        });
+      } else {
+        setAdminData(null);
+      }
     });
-    return () => {
-      active = false;
-    };
+    return unsubscribe;
   }, []);
 
   const handleLogout = () => {

@@ -32,6 +32,8 @@ export interface Asignacion {
   busId: string;
   fecha: string;
   activo: boolean;
+  horaInicio?: number;
+  horaFin?: number;
   createdAt?: number;
   createdBy?: string;
 }
@@ -258,7 +260,12 @@ export const AdminService = {
   },
 
   // 3. Crear Asignación
-  createAsignacion: async (choferId: string, busId: string) => {
+  createAsignacion: async (
+    choferId: string,
+    busId: string,
+    horaInicio?: number,
+    horaFin?: number,
+  ) => {
     const today = AdminService.getTodayDateString();
     const dbRef = ref(firebaseDatabase, ASIGNACIONES_PATH);
 
@@ -269,11 +276,6 @@ export const AdminService = {
         a => a.choferId === choferId && a.fecha === today && a.activo === true,
       );
       if (yaAsignadoChofer) throw new Error('El conductor ya tiene un bus asignado hoy.');
-
-      const yaAsignadoBus = Object.values(data).some(
-        a => a.busId === busId && a.fecha === today && a.activo === true,
-      );
-      if (yaAsignadoBus) throw new Error('Este bus ya fue asignado a otro conductor hoy.');
     }
 
     const adminUid = getAuth().currentUser?.uid;
@@ -285,6 +287,8 @@ export const AdminService = {
       busId,
       fecha: today,
       activo: true,
+      horaInicio,
+      horaFin,
       createdAt: Date.now(),
       createdBy: adminUid,
     });

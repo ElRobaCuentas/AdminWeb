@@ -17,6 +17,22 @@ const formatCreatedAt = (ts: number) =>
     hour12: true,
   });
 
+const timeToMinutos = (hora: string): number | null => {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
+  if (!match) return null;
+  const horas = Number(match[1]);
+  const minutos = Number(match[2]);
+  if (horas > 23 || minutos > 59) return null;
+  return horas * 60 + minutos;
+};
+
+const formatHora = (minutos?: number): string => {
+  if (minutos === undefined || minutos === null || minutos < 0 || minutos > 1439) return '';
+  const horas = Math.floor(minutos / 60);
+  const mins = minutos % 60;
+  return `${horas}:${String(mins).padStart(2, '0')}`;
+};
+
 export const AsignacionesScreen = () => {
   const navigate = useNavigate();
   const [choferes, setChoferes] = useState<Chofer[]>([]);
@@ -28,6 +44,8 @@ export const AsignacionesScreen = () => {
 
   const [selectedChofer, setSelectedChofer] = useState<string | null>(null);
   const [selectedBus, setSelectedBus] = useState<string | null>(null);
+  const [horaInicio, setHoraInicio] = useState('');
+  const [horaFin, setHoraFin] = useState('');
 
   useEffect(() => {
     // 1. Cargar datos en paralelo
@@ -56,12 +74,21 @@ export const AsignacionesScreen = () => {
       return;
     }
 
+    const inicio = timeToMinutos(horaInicio);
+    const fin = timeToMinutos(horaFin);
+    if (inicio === null || fin === null) {
+      setMensaje({ tipo: 'error', texto: 'Ingrese un horario válido para el turno.' });
+      return;
+    }
+
     setCreating(true);
     try {
-      await AdminService.createAsignacion(selectedChofer, selectedBus);
+      await AdminService.createAsignacion(selectedChofer, selectedBus, inicio, fin);
       setMensaje({ tipo: 'exito', texto: 'Asignación creada para el turno de hoy.' });
       setSelectedChofer(null);
       setSelectedBus(null);
+      setHoraInicio('');
+      setHoraFin('');
     } catch (error) {
       setMensaje({ tipo: 'error', texto: (error as Error).message });
     } finally {
@@ -126,6 +153,26 @@ export const AsignacionesScreen = () => {
             )}
           </div>
 
+          <p className="label">3. Ingrese el horario del turno</p>
+          <div className="form-group">
+            <label className="form-label" htmlFor="hora-inicio">Hora inicio</label>
+            <input
+              id="hora-inicio"
+              className="form-input"
+              type="time"
+              value={horaInicio}
+              onChange={e => setHoraInicio(e.target.value)}
+            />
+            <label className="form-label" htmlFor="hora-fin">Hora final</label>
+            <input
+              id="hora-fin"
+              className="form-input"
+              type="time"
+              value={horaFin}
+              onChange={e => setHoraFin(e.target.value)}
+            />
+          </div>
+
           <button
             className="form-button"
             onClick={handleCreate}
@@ -149,6 +196,11 @@ export const AsignacionesScreen = () => {
                   <div className="card-info">
                     <p className="card-title">{choferNombre}</p>
                     <p className="card-subtitle">Bus asignado: {item.busId}</p>
+                    {item.horaInicio !== undefined && item.horaFin !== undefined && (
+                      <p className="card-subtitle">
+                        Inicio: {formatHora(item.horaInicio)} Fin: {formatHora(item.horaFin)}
+                      </p>
+                    )}
                     {!!item.createdAt && (
                       <p className="card-subtitle">Creada: {formatCreatedAt(item.createdAt)}</p>
                     )}

@@ -56,7 +56,7 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 | **Panel de Control** | `/` | Menú principal con acceso a los 4 módulos |
 | **Choferes** | `/choferes` | Crear, listar, editar, activar/desactivar y eliminar conductores. Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`) y el nodo en `/choferes/{dni}` |
 | **Buses** | `/buses` | Crear, listar, activar/desactivar y eliminar buses. Al crear, se inicializa `/ubicacion_buses/{placa}` con `isActive: false` |
-| **Asignaciones** | `/asignaciones` | Vincular un conductor con un bus para el día actual. Valida que ni el conductor ni el bus tengan otra asignación activa hoy. Cancelar desactiva sin eliminar |
+| **Asignaciones** | `/asignaciones` | Vincular un conductor con un bus para el día actual. Valida que el conductor no tenga otra asignación activa hoy (el bus no se valida en el flujo actual). Cancelar desactiva sin eliminar |
 | **Administradores** | `/admins` | Crear, editar y eliminar cuentas de administrador. Crear genera cuenta Firebase Auth (`{dni}@admin.com`) y nodo en `/administradores/{uid}` |
 
 ## Nodos Firebase involucrados

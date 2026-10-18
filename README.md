@@ -45,7 +45,7 @@ src/
 1. El usuario ingresa email y password (Firebase Auth).
 2. Al autenticarse, `App.tsx` llama `existeAdministrador(uid)` que lee `/administradores/{uid}`.
 3. Si el nodo existe → acceso al panel. Si no → pantalla "No autorizado".
-4. La verificación tiene un timeout de 10s para evitar spinners infinitos sin red (ADR-04, C4.AUTH).
+4. La verificación tiene un timeout de 10s para evitar spinners infinitos sin red (C4.AUTH).
 
 Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conductores y estudiantes no pueden entrar.
 
@@ -63,12 +63,12 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 
 | Nodo | Lectura | Escritura | Descripción |
 |------|---------|-----------|-------------|
-| `/choferes/{dni}` | Admin | Admin | Datos del conductor (nombre, apellidos, activo, uid, creadoEn) |
+| `/choferes/{dni}` | Admin | Admin | Datos del conductor (nombre, apellidos, activo, uid, creadoEn, creadoPor) |
 | `/choferes_uids/{uid}` | — | Admin | Vínculo uid → dni para RTDB auth en ubicacion_buses |
-| `/buses/{placa}` | Admin | Admin | Datos del bus (activo, creadoEn) |
+| `/buses/{placa}` | Admin | Admin | Datos del bus (activo, creadoEn, creadoPor) |
 | `/ubicacion_buses/{placa}` | — | Admin (solo init) | Se inicializa al crear bus; tracking lo escribe la DriverApp |
-| `/asignaciones/{id}` | Admin | Admin | Asignación diaria (choferId, busId, fecha, activo, createdBy) |
-| `/administradores/{uid}` | Admin | Admin | Nodo de autorización del admin |
+| `/asignaciones/{id}` | Admin | Admin | Asignación diaria (choferId, busId, fecha, activo, horaInicio, horaFin, createdAt, createdBy) |
+| `/administradores/{uid}` | Admin | Admin existente | Autorización del admin. Los administradores se crean desde el panel; el primero se crea en Firebase Console |
 
 ## Variables de entorno
 

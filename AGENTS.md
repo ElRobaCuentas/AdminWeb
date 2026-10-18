@@ -146,6 +146,13 @@ de ese nodo.
 `/assets/**`. El proyecto de Hosting es `burritounmsm`. No versionar `.env`
 (gitignored).
 
+### 6.10 Bootstrap del primer administrador
+
+El **primer** administrador se crea manualmente en Firebase Console (cuenta
+Auth + nodo `/administradores/{uid}`). A partir de ahí, los demás se crean
+desde el panel (`AdminsScreen` → `createAdmin()`): la escritura sobre
+`/administradores` exige ser un administrador ya existente.
+
 ---
 
 ## 7. Convenciones

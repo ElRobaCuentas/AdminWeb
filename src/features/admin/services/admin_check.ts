@@ -9,9 +9,20 @@ import { withTimeout } from '../../../shared/utils/timeout';
 const ROLE_TIMEOUT_MS = 10000;
 
 export const existeAdministrador = async (uid: string): Promise<boolean> => {
-  const snapshot = await withTimeout(
-    get(ref(firebaseDatabase, `/administradores/${uid}`)),
-    ROLE_TIMEOUT_MS,
-  );
-  return snapshot.exists();
+  try {
+    const snapshot = await withTimeout(
+      get(ref(firebaseDatabase, `/administradores/${uid}`)),
+      ROLE_TIMEOUT_MS,
+    );
+    return snapshot.exists();
+  } catch (error) {
+    // En esta ruta la regla RTDB exige que el usuario ya figure en
+    // /administradores: PERMISSION_DENIED equivale a "no es administrador".
+    if ((error as { code?: string }).code === 'PERMISSION_DENIED') {
+      return false;
+    }
+    // Timeout o fallo de red: no se puede verificar. Se propaga para que el
+    // gate muestre el error recuperable y no una denegación definitiva.
+    throw error;
+  }
 };

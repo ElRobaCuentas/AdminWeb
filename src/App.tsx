@@ -1,53 +1,56 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { firebaseAuth } from './shared/config/firebase';
 import { existeAdministrador } from './features/admin/services/admin_check';
 import { LoginScreen } from './screen/LoginScreen';
 import { AdminNavigator } from './navigation/AdminNavigator';
 
-const App = () => {
-  const [initializing, setInitializing] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [roleError, setRoleError] = useState(false);
+type RoleStatus = 'checking' | 'admin' | 'denied' | 'error';
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async currentUser => {
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          setIsAdmin(await existeAdministrador(currentUser.uid));
-        } catch {
-          setRoleError(true);
-        }
-      } else {
-        setIsAdmin(null);
-        setRoleError(false);
-      }
-      setInitializing(false);
-    });
-    return unsubscribe;
+const App = () => {
+  const [authResolved, setAuthResolved] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<RoleStatus>('checking');
+
+  const verificarRol = useCallback(async (currentUser: User) => {
+    setRole('checking');
+    try {
+      const esAdmin = await existeAdministrador(currentUser.uid);
+      setRole(esAdmin ? 'admin' : 'denied');
+    } catch {
+      setRole('error');
+    }
   }, []);
 
-  const handleReintentar = async () => {
-    if (!user) return;
-    setRoleError(false);
-    try {
-      setIsAdmin(await existeAdministrador(user.uid));
-    } catch {
-      setRoleError(true);
-    }
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, currentUser => {
+      setUser(currentUser);
+      setAuthResolved(true);
+      if (currentUser) {
+        void verificarRol(currentUser);
+      } else {
+        setRole('checking');
+      }
+    });
+    return unsubscribe;
+  }, [verificarRol]);
+
+  const handleReintentar = () => {
+    if (user) void verificarRol(user);
   };
 
   const handleCerrarSesion = async () => {
     await signOut(firebaseAuth);
   };
 
-  if (initializing) {
+  // Mientras se comprueba el rol (sin usuario todavía, o con la verificación en
+  // curso) no se debe mostrar "No autorizado": es un estado pendiente, no una
+  // denegación.
+  if (!authResolved || (user && role === 'checking')) {
     return <div className="screen">Verificando sesión…</div>;
   }
 
-  if (roleError) {
+  if (role === 'error') {
     return (
       <div className="screen">
         <div className="panel">
@@ -70,7 +73,7 @@ const App = () => {
     return <LoginScreen />;
   }
 
-  if (!isAdmin) {
+  if (role === 'denied') {
     return (
       <div className="screen">
         <div className="panel">

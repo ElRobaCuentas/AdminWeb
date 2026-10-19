@@ -72,7 +72,7 @@ export const LoginScreen = () => {
               <Icon name="drivers" size={18} /> Registro y control de conductores
             </li>
             <li>
-              <Icon name="bus" size={18} /> Administración de la flota
+              <Icon name="bus" size={18} /> Administración de los buses
             </li>
             <li>
               <Icon name="assignment" size={18} /> Asignaciones del turno diario
@@ -80,7 +80,7 @@ export const LoginScreen = () => {
           </ul>
         </div>
 
-        <div className="login-brand-foot">SYTHOR · Ecosistema El Burrito</div>
+        <div className="login-brand-foot">EVENTUAL</div>
       </div>
 
       <div className="login-panel">

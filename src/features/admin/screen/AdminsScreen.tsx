@@ -1,31 +1,34 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { getAuth } from 'firebase/auth';
 import { AdminService, type Administrador } from '../services/admin_service';
 import { isValidDni, normalizeDni, sanitizeDniInput } from '../../../shared/utils/dni';
-
-interface Mensaje {
-  tipo: 'exito' | 'error';
-  texto: string;
-}
+import { adminFullName } from '../../../shared/utils/format';
+import { Card, CardHeader } from '../../../shared/ui/Card';
+import { Field } from '../../../shared/ui/Field';
+import { Button } from '../../../shared/ui/Button';
+import { Icon } from '../../../shared/ui/Icon';
+import { EmptyState } from '../../../shared/ui/Feedback';
+import { Modal, ConfirmDialog } from '../../../shared/ui/Modal';
+import { useToast } from '../../../shared/ui/toastContext';
 
 export const AdminsScreen = () => {
-  const navigate = useNavigate();
+  const toast = useToast();
   const [admins, setAdmins] = useState<Administrador[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [mensaje, setMensaje] = useState<Mensaje | null>(null);
 
   const [dni, setDni] = useState('');
   const [nombres, setNombres] = useState('');
   const [apellidos, setApellidos] = useState('');
   const [password, setPassword] = useState('');
 
-  // Estados para edición
-  const [editingUid, setEditingUid] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Administrador | null>(null);
   const [editNombres, setEditNombres] = useState('');
   const [editApellidos, setEditApellidos] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<Administrador | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const unsubscribe = AdminService.subscribeToAdministradores(data => {
@@ -36,222 +39,216 @@ export const AdminsScreen = () => {
   }, []);
 
   const handleCrear = async () => {
-    setMensaje(null);
-
     const dniNormalizado = normalizeDni(dni);
     if (!isValidDni(dniNormalizado)) {
-      setMensaje({ tipo: 'error', texto: 'El DNI debe tener 8 dígitos numéricos.' });
+      toast.error('El DNI debe tener 8 dígitos numéricos.');
       return;
     }
-    if (!nombres.trim()) {
-      setMensaje({ tipo: 'error', texto: 'Ingresa los nombres del administrador.' });
-      return;
-    }
-    if (!apellidos.trim()) {
-      setMensaje({ tipo: 'error', texto: 'Ingresa los apellidos del administrador.' });
+    if (!nombres.trim() || !apellidos.trim()) {
+      toast.error('Ingresa nombres y apellidos del administrador.');
       return;
     }
     if (password.trim().length < 6) {
-      setMensaje({ tipo: 'error', texto: 'La contraseña debe tener al menos 6 caracteres.' });
+      toast.error('La contraseña debe tener al menos 6 caracteres.');
       return;
     }
 
     setCreating(true);
     try {
       await AdminService.createAdmin(dniNormalizado, nombres.trim(), apellidos.trim(), password.trim());
-      setMensaje({ tipo: 'exito', texto: 'Administrador creado correctamente.' });
+      toast.success('Administrador creado correctamente.');
       setDni('');
       setNombres('');
       setApellidos('');
       setPassword('');
-    } catch (err) {
-      setMensaje({ tipo: 'error', texto: (err as Error).message || 'Error al crear administrador.' });
+    } catch (error) {
+      toast.error((error as Error).message || 'Error al crear administrador.');
     } finally {
       setCreating(false);
     }
   };
 
+  const openEdit = (admin: Administrador) => {
+    setEditing(admin);
+    setEditNombres(admin.nombres || '');
+    setEditApellidos(admin.apellidos || '');
+  };
+
   const handleEdit = async () => {
-    if (!editingUid || !editNombres || !editApellidos) return;
+    if (!editing || !editNombres || !editApellidos) return;
     setSaving(true);
     try {
-      await AdminService.updateAdmin(editingUid, { nombres: editNombres, apellidos: editApellidos });
-      setEditingUid(null);
-      setMensaje({ tipo: 'exito', texto: 'Administrador actualizado correctamente.' });
+      await AdminService.updateAdmin(editing.uid, { nombres: editNombres, apellidos: editApellidos });
+      setEditing(null);
+      toast.success('Administrador actualizado correctamente.');
     } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
+      toast.error((error as Error).message);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (admin: Administrador) => {
-    setMensaje(null);
-    if (!window.confirm(`¿Eliminar al administrador ${nombreCompleto(admin)}? Esta acción no se puede deshacer.`)) {
-      return;
-    }
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await AdminService.deleteAdmin(admin.uid);
-      setMensaje({ tipo: 'exito', texto: `Administrador ${nombreCompleto(admin)} eliminado correctamente.` });
+      await AdminService.deleteAdmin(deleteTarget.uid);
+      toast.success(`Administrador ${adminFullName(deleteTarget)} eliminado.`);
     } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
+      toast.error((error as Error).message);
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   };
-
-  if (loading) {
-    return <div className="screen">Cargando administradores…</div>;
-  }
 
   const nombreCreador = (uid: string): string => {
     const creador = admins.find(a => a.uid === uid);
     if (!creador) return 'Admin eliminado';
-    return `${creador.nombres || ''} ${creador.apellidos || ''}`.trim() || 'Admin eliminado';
+    return adminFullName(creador) || 'Admin eliminado';
   };
 
+  const currentUid = getAuth().currentUser?.uid;
+
   return (
-    <div className="screen screen-scroll">
-      <div className="panel panel-wide">
-        <button className="back-button" onClick={() => navigate('/')}>
-          ← Volver
-        </button>
-        <h1 className="panel-title">Gestión de administradores</h1>
-
-        <div className="form-section">
-          <h2 className="section-title">Registrar nuevo administrador</h2>
-          <div className="form-group">
-            <label className="form-label" htmlFor="admin-dni">DNI</label>
-            <input
-              id="admin-dni"
-              className="form-input"
-              inputMode="numeric"
-              maxLength={8}
-              value={dni}
-              onChange={e => setDni(sanitizeDniInput(e.target.value))}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="admin-nombre">Nombres</label>
-            <input
-              id="admin-nombre"
-              className="form-input"
-              value={nombres}
-              onChange={e => setNombres(e.target.value)}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="admin-apellidos">Apellidos</label>
-            <input
-              id="admin-apellidos"
-              className="form-input"
-              value={apellidos}
-              onChange={e => setApellidos(e.target.value)}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="admin-password">Contraseña</label>
-            <input
-              id="admin-password"
-              className="form-input"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-            />
-          </div>
-
-          <button
-            className="form-button"
-            onClick={handleCrear}
-            disabled={creating}
-          >
+    <div className="stack">
+      <Card>
+        <CardHeader
+          title="Registrar nuevo administrador"
+          description="Se crea la cuenta de acceso con correo {DNI}@admin.com."
+        />
+        <div className="card-body">
+          <Field
+            id="admin-dni"
+            label="DNI"
+            inputMode="numeric"
+            maxLength={8}
+            value={dni}
+            onChange={e => setDni(sanitizeDniInput(e.target.value))}
+          />
+          <Field
+            id="admin-nombre"
+            label="Nombres"
+            value={nombres}
+            onChange={e => setNombres(e.target.value)}
+          />
+          <Field
+            id="admin-apellidos"
+            label="Apellidos"
+            value={apellidos}
+            onChange={e => setApellidos(e.target.value)}
+          />
+          <Field
+            id="admin-password"
+            label="Contraseña"
+            type="password"
+            hint="Mínimo 6 caracteres."
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+          />
+          <Button onClick={handleCrear} disabled={creating} icon={<Icon name="plus" size={16} />}>
             {creating ? 'Creando…' : 'Crear administrador'}
-          </button>
-          {mensaje && <p className={`form-message ${mensaje.tipo}`}>{mensaje.texto}</p>}
+          </Button>
         </div>
+      </Card>
 
-        <h2 className="section-title">Administradores registrados</h2>
-        {admins.length === 0 ? (
-          <p className="empty-text">No hay administradores registrados aún.</p>
+      <section>
+        <h2 className="section-title">
+          Administradores registrados{' '}
+          {admins.length > 0 ? <span className="badge badge-info">{admins.length}</span> : null}
+        </h2>
+
+        {loading ? (
+          <p className="text-muted">Cargando administradores…</p>
+        ) : admins.length === 0 ? (
+          <EmptyState
+            icon={<Icon name="admins" size={32} />}
+            title="No hay administradores registrados"
+          />
         ) : (
           <ul className="list">
             {admins.map(item => (
-              <li key={item.uid} className="card">
-                {editingUid === item.uid ? (
-                  <div className="card-edit-form">
-                    <div className="form-group">
-                      <label className="form-label">Nombres</label>
-                      <input
-                        className="form-input"
-                        value={editNombres}
-                        onChange={e => setEditNombres(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Apellidos</label>
-                      <input
-                        className="form-input"
-                        value={editApellidos}
-                        onChange={e => setEditApellidos(e.target.value)}
-                      />
-                    </div>
-                    <div className="card-actions-row">
-                      <button className="form-button-sm" onClick={handleEdit} disabled={saving}>
-                        {saving ? 'Guardando…' : 'Guardar'}
-                      </button>
-                      <button className="form-button-sm form-button-cancel" onClick={() => setEditingUid(null)}>
-                        Cancelar
-                      </button>
-                    </div>
+              <li key={item.uid} className="row-card">
+                <div className="row-info">
+                  <div className="row-title">
+                    {adminFullName(item) || 'Administrador'}
+                    {item.uid === currentUid ? (
+                      <span className="badge badge-info" style={{ marginLeft: 8 }}>Tú</span>
+                    ) : null}
                   </div>
-                ) : (
-                  <>
-                    <div className="card-info">
-                      <p className="card-title">{nombreCompleto(item)}</p>
-                      {item.dni && <p className="card-subtitle">DNI: {item.dni}</p>}
-                      {item.correo && <p className="card-subtitle">Correo: {item.correo}</p>}
-                      {item.creadoPor && (
-                        <p className="card-subtitle">Creado por: {nombreCreador(item.creadoPor)}</p>
-                      )}
-                      {item.creadoEn && (
-                        <p className="card-subtitle">
-                          Creado el: {new Date(item.creadoEn).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-                    <div className="card-actions">
-                      <button
-                        className="icon-button"
-                        title="Editar"
-                        onClick={() => {
-                          setEditingUid(item.uid);
-                          setEditNombres(item.nombres || '');
-                          setEditApellidos(item.apellidos || '');
-                        }}
-                      >
-                        ✏️
-                      </button>
-                      {item.uid !== getAuth().currentUser?.uid && (
-                        <button
-                          className="icon-button icon-button-danger"
-                          title="Eliminar"
-                          onClick={() => handleDelete(item)}
-                        >
-                          🗑️
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
+                  {item.dni ? <div className="row-meta">DNI: {item.dni}</div> : null}
+                  {item.correo ? <div className="row-sub">{item.correo}</div> : null}
+                  {item.creadoPor ? (
+                    <div className="row-sub">Creado por: {nombreCreador(item.creadoPor)}</div>
+                  ) : null}
+                </div>
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="btn btn-icon"
+                    title="Editar"
+                    aria-label={`Editar a ${adminFullName(item)}`}
+                    onClick={() => openEdit(item)}
+                  >
+                    <Icon name="edit" size={16} />
+                  </button>
+                  {item.uid !== currentUid ? (
+                    <button
+                      type="button"
+                      className="btn btn-icon btn-icon-danger"
+                      title="Eliminar"
+                      aria-label={`Eliminar a ${adminFullName(item)}`}
+                      onClick={() => setDeleteTarget(item)}
+                    >
+                      <Icon name="trash" size={16} />
+                    </button>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </section>
+
+      <Modal
+        open={editing !== null}
+        title="Editar administrador"
+        onClose={() => setEditing(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={handleEdit} disabled={saving}>
+              {saving ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </>
+        }
+      >
+        <Field
+          id="edit-admin-nombre"
+          label="Nombres"
+          value={editNombres}
+          onChange={e => setEditNombres(e.target.value)}
+        />
+        <Field
+          id="edit-admin-apellidos"
+          label="Apellidos"
+          value={editApellidos}
+          onChange={e => setEditApellidos(e.target.value)}
+        />
+      </Modal>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Eliminar administrador"
+        message={`¿Eliminar a ${deleteTarget ? adminFullName(deleteTarget) : ''}? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        danger
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 };
-
-const nombreCompleto = (admin: Administrador): string =>
-  `${admin.nombres || ''} ${admin.apellidos || ''}`.trim();

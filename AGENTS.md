@@ -63,7 +63,10 @@ src/main.tsx → App.tsx (auth gate)
 |---------|-----|
 | `src/App.tsx` | **Crítico**: auth gate (`onAuthStateChanged` + verificación de rol) |
 | `src/screen/LoginScreen.tsx` | Login DNI + contraseña (`{dni}@admin.com`) |
-| `src/navigation/AdminNavigator.tsx` | Rutas: `/`, `/choferes`, `/buses`, `/asignaciones`, `/admins`, `*`→`/` |
+| `src/navigation/AdminNavigator.tsx` | Rutas: `/`, `/choferes`, `/buses`, `/asignaciones`, `/admins`, `*`→`/` (dentro del `AppShell`) |
+| `src/shared/layout/AppShell.tsx` | Sidebar + topbar + drawer móvil; provee la sesión (`SessionContext`) |
+| `src/shared/ui/*` | Primitivas de UI (`Button`, `Field`, `Card`, `Modal`/`ConfirmDialog`, `Toast`, `Icon`, etc.) |
+| `src/styles/*` + `src/index.css` | Sistema de diseño por tokens (colores, layout, componentes) |
 | `src/features/admin/services/admin_service.ts` | **Crítico**: toda la lógica CRUD (Auth + RTDB) |
 | `src/features/admin/services/admin_check.ts` | Verificación de rol en `/administradores/{uid}` |
 | `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` al iniciar |
@@ -196,7 +199,7 @@ Si agregás una variable de configuración nueva, sumala ahí y al `.env.example
 | Componentes | PascalCase |
 | Comentarios | Español |
 | Documentación | Español |
-| Estilos | CSS en `index.css` (clases) |
+| Estilos | CSS propio con tokens en `src/styles/` (importado por `index.css`); paleta "Operations Blue" |
 | Lint | Oxlint (`npm run lint`) |
 
 ---

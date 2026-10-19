@@ -1,59 +1,38 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   AdminService, type Asignacion, type Bus, type Chofer,
 } from '../services/admin_service';
-
-interface Mensaje {
-  tipo: 'exito' | 'error';
-  texto: string;
-}
-
-const formatCreatedAt = (ts: number) =>
-  new Date(ts).toLocaleString('es-PE', {
-    timeZone: 'America/Lima',
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: true,
-  });
-
-const timeToMinutos = (hora: string): number | null => {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
-  if (!match) return null;
-  const horas = Number(match[1]);
-  const minutos = Number(match[2]);
-  if (horas > 23 || minutos > 59) return null;
-  return horas * 60 + minutos;
-};
-
-const formatHora = (minutos?: number): string => {
-  if (minutos === undefined || minutos === null || minutos < 0 || minutos > 1439) return '';
-  const horas = Math.floor(minutos / 60);
-  const mins = minutos % 60;
-  return `${horas}:${String(mins).padStart(2, '0')}`;
-};
+import { Card, CardHeader } from '../../../shared/ui/Card';
+import { Field } from '../../../shared/ui/Field';
+import { Button } from '../../../shared/ui/Button';
+import { Icon } from '../../../shared/ui/Icon';
+import { EmptyState } from '../../../shared/ui/Feedback';
+import { ConfirmDialog } from '../../../shared/ui/Modal';
+import { useToast } from '../../../shared/ui/toastContext';
+import { formatHora, formatCreatedAt, timeToMinutos } from '../utils/turno';
 
 export const AsignacionesScreen = () => {
-  const navigate = useNavigate();
+  const toast = useToast();
   const [choferes, setChoferes] = useState<Chofer[]>([]);
   const [buses, setBuses] = useState<Bus[]>([]);
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [mensaje, setMensaje] = useState<Mensaje | null>(null);
 
   const [selectedChofer, setSelectedChofer] = useState<string | null>(null);
   const [selectedBus, setSelectedBus] = useState<string | null>(null);
   const [horaInicio, setHoraInicio] = useState('');
   const [horaFin, setHoraFin] = useState('');
 
+  const [cancelTarget, setCancelTarget] = useState<Asignacion | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
   useEffect(() => {
-    // 1. Cargar datos en paralelo
     const unsubChoferes = AdminService.subscribeToChoferes(data => {
-      setChoferes(data.filter(c => c.activo)); // Solo aptos
+      setChoferes(data.filter(c => c.activo));
     });
     const unsubBuses = AdminService.subscribeToBuses(data => {
-      setBuses(data.filter(b => b.activo)); // Solo aptos
+      setBuses(data.filter(b => b.activo));
     });
     const unsubAsignaciones = AdminService.subscribeToAsignacionesHoy(data => {
       setAsignaciones(data);
@@ -68,155 +47,187 @@ export const AsignacionesScreen = () => {
   }, []);
 
   const handleCreate = async () => {
-    setMensaje(null);
     if (!selectedChofer || !selectedBus) {
-      setMensaje({ tipo: 'error', texto: 'Seleccione un conductor y un bus.' });
+      toast.error('Selecciona un conductor y un bus.');
       return;
     }
 
     const inicio = timeToMinutos(horaInicio);
     const fin = timeToMinutos(horaFin);
     if (inicio === null || fin === null) {
-      setMensaje({ tipo: 'error', texto: 'Ingrese un horario válido para el turno.' });
+      toast.error('Ingresa un horario válido para el turno.');
       return;
     }
 
     setCreating(true);
     try {
       await AdminService.createAsignacion(selectedChofer, selectedBus, inicio, fin);
-      setMensaje({ tipo: 'exito', texto: 'Asignación creada para el turno de hoy.' });
+      toast.success('Asignación creada para el turno de hoy.');
       setSelectedChofer(null);
       setSelectedBus(null);
       setHoraInicio('');
       setHoraFin('');
     } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
+      toast.error((error as Error).message);
     } finally {
       setCreating(false);
     }
   };
 
-  const handleCancel = (id: string) => {
-    if (window.confirm('¿El conductor dejará de manejar este bus hoy?')) {
-      AdminService.cancelarAsignacion(id).then(ok => {
-        if (!ok) {
-          setMensaje({ tipo: 'error', texto: 'No se pudo cancelar la asignación. Inténtalo de nuevo.' });
-        }
-      });
+  const handleCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    const ok = await AdminService.cancelarAsignacion(cancelTarget.id);
+    setCancelling(false);
+    setCancelTarget(null);
+    if (ok) {
+      toast.success('Asignación cancelada.');
+    } else {
+      toast.error('No se pudo cancelar la asignación.');
     }
   };
 
-  if (loading) {
-    return <div className="screen">Cargando asignaciones…</div>;
-  }
-
   return (
-    <div className="screen screen-scroll">
-      <div className="panel panel-wide">
-        <button className="back-button" onClick={() => navigate('/')}>
-          ← Volver
-        </button>
-        <h1 className="panel-title">Asignaciones diarias</h1>
+    <div className="stack">
+      <Card>
+        <CardHeader
+          title={`Turno de hoy: ${AdminService.getTodayDateString()}`}
+          description="Selecciona un conductor y un vehículo activo."
+        />
+        <div className="card-body">
+          <div className="steps">
+            <div>
+              <div className="step-label">
+                <span className="step-num">1</span> Conductor
+              </div>
+              {choferes.length === 0 ? (
+                <p className="text-muted">No hay conductores activos.</p>
+              ) : (
+                <div className="chip-grid">
+                  {choferes.map(c => (
+                    <button
+                      key={c.dni}
+                      type="button"
+                      className={['chip', selectedChofer === c.dni ? 'is-selected' : ''].filter(Boolean).join(' ')}
+                      onClick={() => setSelectedChofer(c.dni)}
+                    >
+                      {c.nombre} {c.apellidos}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-        <div className="form-section">
-          <h2 className="section-title">Turno de hoy: {AdminService.getTodayDateString()}</h2>
+            <div>
+              <div className="step-label">
+                <span className="step-num">2</span> Vehículo
+              </div>
+              {buses.length === 0 ? (
+                <p className="text-muted">No hay buses activos.</p>
+              ) : (
+                <div className="chip-grid">
+                  {buses.map(b => (
+                    <button
+                      key={b.placa}
+                      type="button"
+                      className={['chip', selectedBus === b.placa ? 'is-selected' : ''].filter(Boolean).join(' ')}
+                      onClick={() => setSelectedBus(b.placa)}
+                    >
+                      {b.placa}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          <p className="label">1. Seleccione conductor</p>
-          <div className="selector-grid">
-            {choferes.map(c => (
-              <button
-                key={c.dni}
-                className={`chip ${selectedChofer === c.dni ? 'chip-selected' : ''}`}
-                onClick={() => setSelectedChofer(c.dni)}
-              >
-                {c.nombre} {c.apellidos}
-              </button>
-            ))}
-            {choferes.length === 0 && (
-              <p className="empty-text">No hay conductores activos.</p>
-            )}
+            <div>
+              <div className="step-label">
+                <span className="step-num">3</span> Horario del turno
+              </div>
+              <div className="time-grid">
+                <Field
+                  id="hora-inicio"
+                  label="Hora de inicio"
+                  type="time"
+                  value={horaInicio}
+                  onChange={e => setHoraInicio(e.target.value)}
+                />
+                <Field
+                  id="hora-fin"
+                  label="Hora de fin"
+                  type="time"
+                  value={horaFin}
+                  onChange={e => setHoraFin(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
 
-          <p className="label">2. Seleccione vehículo</p>
-          <div className="selector-grid">
-            {buses.map(b => (
-              <button
-                key={b.placa}
-                className={`chip ${selectedBus === b.placa ? 'chip-selected' : ''}`}
-                onClick={() => setSelectedBus(b.placa)}
-              >
-                {b.placa}
-              </button>
-            ))}
-            {buses.length === 0 && (
-              <p className="empty-text">No hay buses activos.</p>
-            )}
-          </div>
-
-          <p className="label">3. Ingrese el horario del turno</p>
-          <div className="form-group">
-            <label className="form-label" htmlFor="hora-inicio">Hora inicio</label>
-            <input
-              id="hora-inicio"
-              className="form-input"
-              type="time"
-              value={horaInicio}
-              onChange={e => setHoraInicio(e.target.value)}
-            />
-            <label className="form-label" htmlFor="hora-fin">Hora final</label>
-            <input
-              id="hora-fin"
-              className="form-input"
-              type="time"
-              value={horaFin}
-              onChange={e => setHoraFin(e.target.value)}
-            />
-          </div>
-
-          <button
-            className="form-button"
-            onClick={handleCreate}
-            disabled={creating}
-          >
-            {creating ? 'Asignando…' : 'Crear Asignación'}
-          </button>
-          {mensaje && <p className={`form-message ${mensaje.tipo}`}>{mensaje.texto}</p>}
+          <Button onClick={handleCreate} disabled={creating} icon={<Icon name="plus" size={16} />}>
+            {creating ? 'Asignando…' : 'Crear asignación'}
+          </Button>
         </div>
+      </Card>
 
-        <h2 className="section-title">Asignaciones activas</h2>
-        {asignaciones.length === 0 ? (
-          <p className="empty-text">Nadie está manejando en este momento.</p>
+      <section>
+        <h2 className="section-title">
+          Asignaciones activas{' '}
+          {asignaciones.length > 0 ? <span className="badge badge-info">{asignaciones.length}</span> : null}
+        </h2>
+
+        {loading ? (
+          <p className="text-muted">Cargando asignaciones…</p>
+        ) : asignaciones.length === 0 ? (
+          <EmptyState
+            icon={<Icon name="assignment" size={32} />}
+            title="Nadie está manejando en este momento"
+            hint="Crea una asignación con el formulario de arriba."
+          />
         ) : (
           <ul className="list">
             {asignaciones.map(item => {
               const choferNombre =
                 choferes.find(c => c.dni === item.choferId)?.nombre || item.choferId;
               return (
-                <li key={item.id} className="card">
-                  <div className="card-info">
-                    <p className="card-title">{choferNombre}</p>
-                    <p className="card-subtitle">Bus asignado: {item.busId}</p>
-                    {item.horaInicio !== undefined && item.horaFin !== undefined && (
-                      <p className="card-subtitle">
-                        Inicio: {formatHora(item.horaInicio)} Fin: {formatHora(item.horaFin)}
-                      </p>
-                    )}
-                    {!!item.createdAt && (
-                      <p className="card-subtitle">Creada: {formatCreatedAt(item.createdAt)}</p>
-                    )}
+                <li key={item.id} className="row-card">
+                  <div className="row-info">
+                    <div className="row-title">{choferNombre}</div>
+                    <div className="row-meta">Bus asignado: {item.busId}</div>
+                    {item.horaInicio !== undefined && item.horaFin !== undefined ? (
+                      <div className="row-sub">
+                        Turno {formatHora(item.horaInicio)} – {formatHora(item.horaFin)}
+                        {item.createdAt ? ` · Creada ${formatCreatedAt(item.createdAt)}` : ''}
+                      </div>
+                    ) : null}
                   </div>
-                  <button
-                    className="cancel-button"
-                    onClick={() => handleCancel(item.id)}
-                  >
-                    Cancelar
-                  </button>
+                  <div className="row-actions">
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setCancelTarget(item)}
+                      icon={<Icon name="close" size={15} />}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
                 </li>
               );
             })}
           </ul>
         )}
-      </div>
+      </section>
+
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title="Cancelar asignación"
+        message="¿El conductor dejará de manejar este bus hoy?"
+        confirmLabel="Cancelar asignación"
+        cancelLabel="Volver"
+        danger
+        busy={cancelling}
+        onConfirm={handleCancel}
+        onCancel={() => setCancelTarget(null)}
+      />
     </div>
   );
 };

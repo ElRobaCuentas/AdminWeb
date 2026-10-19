@@ -4,6 +4,9 @@ import { firebaseAuth } from './shared/config/firebase';
 import { existeAdministrador } from './features/admin/services/admin_check';
 import { LoginScreen } from './screen/LoginScreen';
 import { AdminNavigator } from './navigation/AdminNavigator';
+import { Button } from './shared/ui/Button';
+import { Icon } from './shared/ui/Icon';
+import { LoadingScreen } from './shared/ui/Feedback';
 
 type RoleStatus = 'checking' | 'admin' | 'denied' | 'error';
 
@@ -47,23 +50,26 @@ const App = () => {
   // curso) no se debe mostrar "No autorizado": es un estado pendiente, no una
   // denegación.
   if (!authResolved || (user && role === 'checking')) {
-    return <div className="screen">Verificando sesión…</div>;
+    return <LoadingScreen text="Verificando sesión…" />;
   }
 
   if (role === 'error') {
     return (
       <div className="screen">
-        <div className="panel">
-          <h1 className="panel-title">No se pudo verificar tu cuenta</h1>
-          <p className="panel-subtitle">
-            Verifica tu conexión e intenta de nuevo.
-          </p>
-          <button className="form-button" onClick={handleReintentar}>
-            Reintentar
-          </button>
-          <button className="form-button" onClick={handleCerrarSesion}>
-            Cerrar Sesión
-          </button>
+        <div className="auth-screen-card">
+          <div className="auth-screen-icon is-danger">
+            <Icon name="alert" size={28} />
+          </div>
+          <h1>No se pudo verificar tu cuenta</h1>
+          <p>Verifica tu conexión e intenta de nuevo.</p>
+          <div className="auth-screen-actions">
+            <Button block onClick={handleReintentar}>
+              Reintentar
+            </Button>
+            <Button variant="secondary" block onClick={handleCerrarSesion}>
+              Cerrar Sesión
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -76,15 +82,20 @@ const App = () => {
   if (role === 'denied') {
     return (
       <div className="screen">
-        <div className="panel">
-          <h1 className="panel-title">No autorizado</h1>
-          <p className="panel-subtitle">
+        <div className="auth-screen-card">
+          <div className="auth-screen-icon is-warning">
+            <Icon name="shieldOff" size={28} />
+          </div>
+          <h1>No autorizado</h1>
+          <p>
             Esta cuenta no tiene permisos de administración. El panel web es
             exclusivo para administradores.
           </p>
-          <button className="form-button" onClick={handleCerrarSesion}>
-            Cerrar Sesión
-          </button>
+          <div className="auth-screen-actions">
+            <Button block onClick={handleCerrarSesion}>
+              Cerrar Sesión
+            </Button>
+          </div>
         </div>
       </div>
     );

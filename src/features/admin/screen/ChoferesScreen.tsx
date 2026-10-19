@@ -1,32 +1,36 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { AdminService, type Chofer, type Administrador } from '../services/admin_service';
 import { isValidDni, normalizeDni, sanitizeDniInput } from '../../../shared/utils/dni';
-
-interface Mensaje {
-  tipo: 'exito' | 'error';
-  texto: string;
-}
+import { resolveAdminName, formatDate } from '../../../shared/utils/format';
+import { Card, CardHeader } from '../../../shared/ui/Card';
+import { Field } from '../../../shared/ui/Field';
+import { Button } from '../../../shared/ui/Button';
+import { Icon } from '../../../shared/ui/Icon';
+import { StatusBadge } from '../../../shared/ui/StatusBadge';
+import { ToggleSwitch } from '../../../shared/ui/ToggleSwitch';
+import { EmptyState } from '../../../shared/ui/Feedback';
+import { Modal, ConfirmDialog } from '../../../shared/ui/Modal';
+import { useToast } from '../../../shared/ui/toastContext';
 
 export const ChoferesScreen = () => {
-  const navigate = useNavigate();
+  const toast = useToast();
   const [choferes, setChoferes] = useState<Chofer[]>([]);
   const [admins, setAdmins] = useState<Administrador[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [mensaje, setMensaje] = useState<Mensaje | null>(null);
 
   const [dni, setDni] = useState('');
   const [nombre, setNombre] = useState('');
   const [apellidos, setApellidos] = useState('');
 
-  // Estado para edición
-  const [editingDni, setEditingDni] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Chofer | null>(null);
   const [editNombre, setEditNombre] = useState('');
   const [editApellidos, setEditApellidos] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // 1. Cargar choferes en tiempo real
+  const [toggleTarget, setToggleTarget] = useState<{ chofer: Chofer; next: boolean } | null>(null);
+  const [toggling, setToggling] = useState(false);
+
   useEffect(() => {
     const unsubscribe = AdminService.subscribeToChoferes(data => {
       setChoferes(data);
@@ -35,208 +39,201 @@ export const ChoferesScreen = () => {
     return () => unsubscribe();
   }, []);
 
-  // 1b. Cargar admins para resolver "Creado por"
   useEffect(() => {
     const unsubscribe = AdminService.subscribeToAdministradores(setAdmins);
     return () => unsubscribe();
   }, []);
 
-  // 2. Manejar Creación
   const handleCreate = async () => {
-    setMensaje(null);
     if (!dni || !nombre || !apellidos) {
-      setMensaje({ tipo: 'error', texto: 'Todos los campos son obligatorios' });
+      toast.error('Todos los campos son obligatorios.');
       return;
     }
     const dniNormalizado = normalizeDni(dni);
     if (!isValidDni(dniNormalizado)) {
-      setMensaje({ tipo: 'error', texto: 'El DNI debe tener 8 dígitos numéricos.' });
+      toast.error('El DNI debe tener 8 dígitos numéricos.');
       return;
     }
 
     setCreating(true);
     try {
       await AdminService.createChofer({ dni: dniNormalizado, nombre, apellidos });
-      setMensaje({ tipo: 'exito', texto: 'Chofer registrado correctamente. Su clave es su DNI.' });
+      toast.success('Conductor registrado. Su clave inicial es su DNI.');
       setDni('');
       setNombre('');
       setApellidos('');
     } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
+      toast.error((error as Error).message);
     } finally {
       setCreating(false);
     }
   };
 
-  // 3. Manejar Edición
+  const openEdit = (item: Chofer) => {
+    setEditing(item);
+    setEditNombre(item.nombre);
+    setEditApellidos(item.apellidos);
+  };
+
   const handleEdit = async () => {
-    if (!editingDni || !editNombre || !editApellidos) return;
+    if (!editing || !editNombre || !editApellidos) return;
     setSaving(true);
     try {
-      await AdminService.updateChofer(editingDni, { nombre: editNombre, apellidos: editApellidos });
-      setEditingDni(null);
-      setMensaje({ tipo: 'exito', texto: 'Conductor actualizado correctamente.' });
+      await AdminService.updateChofer(editing.dni, { nombre: editNombre, apellidos: editApellidos });
+      setEditing(null);
+      toast.success('Conductor actualizado correctamente.');
     } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
+      toast.error((error as Error).message);
     } finally {
       setSaving(false);
     }
   };
 
-  const resolveAdminName = (uid?: string | null): string => {
-    if (!uid) return 'Admin eliminado';
-    const admin = admins.find(a => a.uid === uid);
-    if (admin?.nombres) return `${admin.nombres} ${admin.apellidos ?? ''}`.trim();
-    return 'Admin eliminado';
+  const handleToggle = async () => {
+    if (!toggleTarget) return;
+    setToggling(true);
+    const { chofer, next } = toggleTarget;
+    const ok = await AdminService.toggleChoferStatus(chofer.dni, next);
+    setToggling(false);
+    setToggleTarget(null);
+    if (ok) {
+      toast.success(next ? 'Conductor activado.' : 'Conductor desactivado.');
+    } else {
+      toast.error(`No se pudo ${next ? 'activar' : 'desactivar'} al conductor.`);
+    }
   };
-
-  const formatDate = (ts?: number): string => {
-    if (!ts) return '';
-    return new Date(ts).toLocaleDateString('es-PE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
-
-  if (loading) {
-    return <div className="screen">Cargando choferes…</div>;
-  }
 
   return (
-    <div className="screen screen-scroll">
-      <div className="panel panel-wide">
-        <button className="back-button" onClick={() => navigate('/')}>
-          ← Volver
-        </button>
-        <h1 className="panel-title">Gestión de choferes</h1>
-
-        <div className="form-section">
-          <h2 className="section-title">Registrar nuevo chofer</h2>
-          <div className="form-group">
-            <label className="form-label" htmlFor="chofer-dni">DNI</label>
-            <input
-              id="chofer-dni"
-              className="form-input"
-              inputMode="numeric"
-              maxLength={8}
-              value={dni}
-              onChange={e => setDni(sanitizeDniInput(e.target.value))}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="chofer-nombre">Nombres</label>
-            <input
-              id="chofer-nombre"
-              className="form-input"
-              value={nombre}
-              onChange={e => setNombre(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="chofer-apellidos">Apellidos</label>
-            <input
-              id="chofer-apellidos"
-              className="form-input"  
-              value={apellidos}
-              onChange={e => setApellidos(e.target.value)}
-            />
-          </div>
-          <button
-            className="form-button"
+    <div className="stack">
+      <Card>
+        <CardHeader title="Registrar nuevo conductor" description="Su contraseña inicial será su DNI." />
+        <div className="card-body">
+          <Field
+            id="chofer-dni"
+            label="DNI"
+            inputMode="numeric"
+            maxLength={8}
+            value={dni}
+            onChange={e => setDni(sanitizeDniInput(e.target.value))}
+          />
+          <Field
+            id="chofer-nombre"
+            label="Nombres"
+            value={nombre}
+            onChange={e => setNombre(e.target.value)}
+          />
+          <Field
+            id="chofer-apellidos"
+            label="Apellidos"
+            value={apellidos}
+            onChange={e => setApellidos(e.target.value)}
+          />
+          <Button
             onClick={handleCreate}
             disabled={creating}
+            icon={<Icon name="plus" size={16} />}
           >
-            {creating ? 'Registrando…' : 'Registrar Chofer'}
-          </button>
-          {mensaje && <p className={`form-message ${mensaje.tipo}`}>{mensaje.texto}</p>}
+            {creating ? 'Registrando…' : 'Registrar conductor'}
+          </Button>
         </div>
+      </Card>
 
-        <h2 className="section-title">Conductores registrados</h2>
-        {choferes.length === 0 ? (
-          <p className="empty-text">No hay conductores registrados aún.</p>
+      <section>
+        <h2 className="section-title">
+          Conductores registrados{' '}
+          {choferes.length > 0 ? <span className="badge badge-info">{choferes.length}</span> : null}
+        </h2>
+
+        {loading ? (
+          <p className="text-muted">Cargando conductores…</p>
+        ) : choferes.length === 0 ? (
+          <EmptyState
+            icon={<Icon name="drivers" size={32} />}
+            title="No hay conductores registrados"
+            hint="Registra el primero con el formulario de arriba."
+          />
         ) : (
           <ul className="list">
             {choferes.map(item => (
-              <li key={item.dni} className="card">
-                {editingDni === item.dni ? (
-                  <div className="card-edit-form">
-                    <div className="form-group">
-                      <label className="form-label">Nombres</label>
-                      <input
-                        className="form-input"
-                        value={editNombre}
-                        onChange={e => setEditNombre(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Apellidos</label>
-                      <input
-                        className="form-input"
-                        value={editApellidos}
-                        onChange={e => setEditApellidos(e.target.value)}
-                      />
-                    </div>
-                    <div className="card-actions-row">
-                      <button className="form-button-sm" onClick={handleEdit} disabled={saving}>
-                        {saving ? 'Guardando…' : 'Guardar'}
-                      </button>
-                      <button className="form-button-sm form-button-cancel" onClick={() => setEditingDni(null)}>
-                        Cancelar
-                      </button>
-                    </div>
+              <li key={item.dni} className="row-card">
+                <div className="row-info">
+                  <div className="row-title">
+                    {item.nombre} {item.apellidos}
                   </div>
-                ) : (
-                  <>
-                    <div className="card-info">
-                      <p className="card-title">{item.nombre} {item.apellidos}</p>
-                      <p className="card-subtitle">DNI: {item.dni}</p>
-                      {item.creadoEn && (
-                        <p className="card-meta">Creado el: {formatDate(item.creadoEn)}</p>
-                      )}
-                      {item.creadoPor && (
-                        <p className="card-meta">Creado por: {resolveAdminName(item.creadoPor)}</p>
-                      )}
+                  <div className="row-meta">DNI: {item.dni}</div>
+                  {item.creadoEn ? (
+                    <div className="row-sub">
+                      Creado el {formatDate(item.creadoEn)}
+                      {item.creadoPor ? ` · ${resolveAdminName(admins, item.creadoPor)}` : ''}
                     </div>
-                    <div className="card-actions">
-                      <input
-                        type="checkbox"
-                        role="switch"
-                        aria-label={`Activo: ${item.nombre} ${item.apellidos}`}
-                        checked={item.activo}
-                        onChange={() => {
-                          const accion = item.activo ? 'desactivar' : 'activar';
-                          const detalle = item.activo
-                            ? ' Se conservará su cuenta y su historial, y podrá reactivarlo cuando quieras.'
-                            : '';
-                          if (window.confirm(`¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?${detalle}`)) {
-                            AdminService.toggleChoferStatus(item.dni, !item.activo).then(ok => {
-                              if (!ok) {
-                                setMensaje({ tipo: 'error', texto: `No se pudo ${accion} al conductor. Inténtalo de nuevo.` });
-                              }
-                            });
-                          }
-                        }}
-                      />
-                      <button
-                        className="icon-button"
-                        title="Editar"
-                        onClick={() => {
-                          setEditingDni(item.dni);
-                          setEditNombre(item.nombre);
-                          setEditApellidos(item.apellidos);
-                        }}
-                      >
-                        ✏️
-                      </button>
-                    </div>
-                  </>
-                )}
+                  ) : null}
+                </div>
+                <div className="row-actions">
+                  <StatusBadge active={item.activo} />
+                  <ToggleSwitch
+                    checked={item.activo}
+                    label={`${item.activo ? 'Desactivar' : 'Activar'} a ${item.nombre} ${item.apellidos}`}
+                    onChange={next => setToggleTarget({ chofer: item, next })}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-icon"
+                    title="Editar"
+                    aria-label={`Editar a ${item.nombre} ${item.apellidos}`}
+                    onClick={() => openEdit(item)}
+                  >
+                    <Icon name="edit" size={16} />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </section>
+
+      <Modal
+        open={editing !== null}
+        title="Editar conductor"
+        onClose={() => setEditing(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={handleEdit} disabled={saving}>
+              {saving ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </>
+        }
+      >
+        <Field
+          id="edit-chofer-nombre"
+          label="Nombres"
+          value={editNombre}
+          onChange={e => setEditNombre(e.target.value)}
+        />
+        <Field
+          id="edit-chofer-apellidos"
+          label="Apellidos"
+          value={editApellidos}
+          onChange={e => setEditApellidos(e.target.value)}
+        />
+      </Modal>
+
+      <ConfirmDialog
+        open={toggleTarget !== null}
+        title={toggleTarget?.next ? 'Activar conductor' : 'Desactivar conductor'}
+        message={
+          toggleTarget?.next
+            ? `¿Deseas activar a ${toggleTarget.chofer.nombre} ${toggleTarget.chofer.apellidos}?`
+            : `¿Deseas desactivar a ${toggleTarget?.chofer.nombre} ${toggleTarget?.chofer.apellidos}? Se conservará su cuenta y su historial, y podrás reactivarlo cuando quieras.`
+        }
+        confirmLabel={toggleTarget?.next ? 'Activar' : 'Desactivar'}
+        danger={!toggleTarget?.next}
+        busy={toggling}
+        onConfirm={handleToggle}
+        onCancel={() => setToggleTarget(null)}
+      />
     </div>
   );
 };

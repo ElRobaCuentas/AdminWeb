@@ -1,75 +1,125 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { firebaseAuth } from '../../../shared/config/firebase';
-import { AdminService, type Administrador } from '../services/admin_service';
+import { AdminService } from '../services/admin_service';
+import { useSession } from '../../../shared/layout/SessionContext';
+import { Icon, type IconName } from '../../../shared/ui/Icon';
+import { StatCard } from '../../../shared/ui/StatCard';
+
+interface ModuleLink {
+  to: string;
+  icon: IconName;
+  title: string;
+  description: string;
+}
+
+const MODULES: ModuleLink[] = [
+  {
+    to: '/choferes',
+    icon: 'drivers',
+    title: 'Gestión de conductores',
+    description: 'Registrar, activar y desactivar conductores.',
+  },
+  {
+    to: '/buses',
+    icon: 'bus',
+    title: 'Gestión de buses',
+    description: 'Registrar placas y estado de los vehículos.',
+  },
+  {
+    to: '/asignaciones',
+    icon: 'assignment',
+    title: 'Asignaciones diarias',
+    description: 'Vincular conductores con vehículos para el turno de hoy.',
+  },
+  {
+    to: '/admins',
+    icon: 'admins',
+    title: 'Administradores',
+    description: 'Registrar, editar y eliminar cuentas de administrador.',
+  },
+];
 
 export const AdminPanelScreen = () => {
   const navigate = useNavigate();
-  const [adminData, setAdminData] = useState<Administrador | null>(null);
+  const admin = useSession();
+
+  const [choferesActivos, setChoferesActivos] = useState(0);
+  const [busesActivos, setBusesActivos] = useState(0);
+  const [asignacionesHoy, setAsignacionesHoy] = useState(0);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, user => {
-      if (user) {
-        let active = true;
-        AdminService.getAdministrador(user.uid).then(data => {
-          if (active) setAdminData(data);
-        });
-      } else {
-        setAdminData(null);
-      }
+    const unsubChoferes = AdminService.subscribeToChoferes(data => {
+      setChoferesActivos(data.filter(c => c.activo).length);
     });
-    return unsubscribe;
+    const unsubBuses = AdminService.subscribeToBuses(data => {
+      setBusesActivos(data.filter(b => b.activo).length);
+    });
+    const unsubAsignaciones = AdminService.subscribeToAsignacionesHoy(data => {
+      setAsignacionesHoy(data.length);
+    });
+    return () => {
+      unsubChoferes();
+      unsubBuses();
+      unsubAsignaciones();
+    };
   }, []);
 
-  const handleLogout = () => {
-    if (window.confirm('¿Estás seguro de que deseas salir?')) {
-      signOut(firebaseAuth);
-    }
-  };
+  const nombre = admin?.nombres?.trim();
 
   return (
-    <div className="screen">
-      <div className="panel">
-        <h1 className="panel-title">Panel de Control</h1>
-        <p className="panel-subtitle">Selecciona el módulo que deseas gestionar:</p>
-
-        {adminData && (adminData.nombres || adminData.dni) && (
-          <div className="session-info">
-            <p className="session-name">
-              Bienvenido, {adminData.nombres || ''} {adminData.apellidos || ''} — DNI:{' '}
-              {adminData.dni || '—'}
-            </p>
-            {adminData.correo && <p className="session-email">Correo: {adminData.correo}</p>}
-          </div>
-        )}
-
-        <div className="menu-list">
-          <button className="menu-button" onClick={() => navigate('/choferes')}>
-            Gestión de choferes
-            <span>Registrar, activar y desactivar conductores</span>
-          </button>
-
-          <button className="menu-button" onClick={() => navigate('/buses')}>
-            Gestión de buses
-            <span>Registrar placas y estado de los vehículos</span>
-          </button>
-
-          <button className="menu-button" onClick={() => navigate('/asignaciones')}>
-            Asignaciones diarias
-            <span>Vincular conductores con vehículos para el turno de hoy</span>
-          </button>
-
-          <button className="menu-button" onClick={() => navigate('/admins')}>
-            Gestión de administradores
-            <span>Registrar, editar y eliminar cuentas de administrador</span>
-          </button>
-
-          <button className="logout-button" onClick={handleLogout}>
-            Cerrar Sesión
-          </button>
+    <div className="stack">
+      <div className="welcome-banner">
+        <div>
+          <h2>{nombre ? `Hola, ${nombre}` : 'Bienvenido al panel'}</h2>
+          <p>Este es el resumen de la operación de hoy.</p>
+        </div>
+        <div className="avatar">
+          <Icon name="dashboard" size={20} />
         </div>
       </div>
+
+      <section>
+        <h2 className="section-title">Resumen de hoy</h2>
+        <div className="grid">
+          <StatCard
+            icon={<Icon name="drivers" size={24} />}
+            value={choferesActivos}
+            label="Conductores activos"
+          />
+          <StatCard
+            icon={<Icon name="bus" size={24} />}
+            value={busesActivos}
+            label="Buses activos"
+            tone="accent"
+          />
+          <StatCard
+            icon={<Icon name="assignment" size={24} />}
+            value={asignacionesHoy}
+            label="Asignaciones de hoy"
+            tone="success"
+          />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="section-title">Módulos</h2>
+        <div className="grid">
+          {MODULES.map(module => (
+            <button
+              key={module.to}
+              type="button"
+              className="module-card"
+              onClick={() => navigate(module.to)}
+            >
+              <span className="module-icon">
+                <Icon name={module.icon} size={22} />
+              </span>
+              <span className="module-title">{module.title}</span>
+              <span className="module-desc">{module.description}</span>
+            </button>
+          ))}
+        </div>
+      </section>
     </div>
   );
 };

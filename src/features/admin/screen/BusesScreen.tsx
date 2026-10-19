@@ -1,23 +1,29 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { AdminService, type Bus, type Administrador } from '../services/admin_service';
-
-interface Mensaje {
-  tipo: 'exito' | 'error';
-  texto: string;
-}
+import { resolveAdminName, formatDate } from '../../../shared/utils/format';
+import { Card, CardHeader } from '../../../shared/ui/Card';
+import { Field } from '../../../shared/ui/Field';
+import { Button } from '../../../shared/ui/Button';
+import { Icon } from '../../../shared/ui/Icon';
+import { StatusBadge } from '../../../shared/ui/StatusBadge';
+import { ToggleSwitch } from '../../../shared/ui/ToggleSwitch';
+import { EmptyState } from '../../../shared/ui/Feedback';
+import { ConfirmDialog } from '../../../shared/ui/Modal';
+import { useToast } from '../../../shared/ui/toastContext';
 
 export const BusesScreen = () => {
-  const navigate = useNavigate();
+  const toast = useToast();
   const [buses, setBuses] = useState<Bus[]>([]);
   const [admins, setAdmins] = useState<Administrador[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [mensaje, setMensaje] = useState<Mensaje | null>(null);
 
   const [placa, setPlaca] = useState('');
 
-  // 1. Cargar buses en tiempo real
+  const [toggleTarget, setToggleTarget] = useState<{ bus: Bus; next: boolean } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Bus | null>(null);
+  const [busy, setBusy] = useState(false);
+
   useEffect(() => {
     const unsubscribe = AdminService.subscribeToBuses(data => {
       setBuses(data);
@@ -26,155 +32,157 @@ export const BusesScreen = () => {
     return () => unsubscribe();
   }, []);
 
-  // 1b. Cargar admins para resolver "Creado por"
   useEffect(() => {
     const unsubscribe = AdminService.subscribeToAdministradores(setAdmins);
     return () => unsubscribe();
   }, []);
 
-  // 2. Manejar Creación
   const handleCreate = async () => {
-    setMensaje(null);
     if (!placa) {
-      setMensaje({ tipo: 'error', texto: 'La placa es obligatoria' });
+      toast.error('La placa es obligatoria.');
       return;
     }
-
     if (placa.trim().length < 6) {
-      setMensaje({ tipo: 'error', texto: 'Ingrese una placa válida' });
+      toast.error('Ingresa una placa válida.');
       return;
     }
 
     setCreating(true);
     try {
-      await AdminService.createBus({
-        placa: placa.toUpperCase().trim(),
-      });
-      setMensaje({ tipo: 'exito', texto: 'Bus registrado correctamente en la flota.' });
+      await AdminService.createBus({ placa: placa.toUpperCase().trim() });
+      toast.success('Bus registrado correctamente en la flota.');
       setPlaca('');
     } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
+      toast.error((error as Error).message);
     } finally {
       setCreating(false);
     }
   };
 
-  // 3. Manejar Eliminación
-  const handleDelete = async (bus: Bus) => {
-    setMensaje(null);
-    const tieneAsignacion = await AdminService.hasActiveBusAssignment(bus.placa);
-    if (tieneAsignacion) {
-      setMensaje({ tipo: 'error', texto: 'Este bus tiene una asignación activa. Cancele la asignación primero.' });
-      return;
+  const handleToggle = async () => {
+    if (!toggleTarget) return;
+    setBusy(true);
+    const { bus, next } = toggleTarget;
+    const ok = await AdminService.toggleBusStatus(bus.placa, next);
+    setBusy(false);
+    setToggleTarget(null);
+    if (ok) {
+      toast.success(next ? 'Bus activado.' : 'Bus desactivado.');
+    } else {
+      toast.error(`No se pudo ${next ? 'activar' : 'desactivar'} el bus.`);
     }
-    if (!window.confirm(`¿Eliminar el bus ${bus.placa}? Esta acción no se puede deshacer.`)) {
-      return;
-    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const bus = deleteTarget;
+    setBusy(true);
     try {
+      const tieneAsignacion = await AdminService.hasActiveBusAssignment(bus.placa);
+      if (tieneAsignacion) {
+        toast.error('Este bus tiene una asignación activa. Cancela la asignación primero.');
+        return;
+      }
       await AdminService.deleteBus(bus.placa);
-      setMensaje({ tipo: 'exito', texto: `Bus ${bus.placa} eliminado correctamente.` });
+      toast.success(`Bus ${bus.placa} eliminado correctamente.`);
     } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+      setDeleteTarget(null);
     }
   };
-
-  const resolveAdminName = (uid?: string | null): string => {
-    if (!uid) return 'Admin eliminado';
-    const admin = admins.find(a => a.uid === uid);
-    if (admin?.nombres) return `${admin.nombres} ${admin.apellidos ?? ''}`.trim();
-    return 'Admin eliminado';
-  };
-
-  const formatDate = (ts?: number): string => {
-    if (!ts) return '';
-    return new Date(ts).toLocaleDateString('es-PE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
-
-  if (loading) {
-    return <div className="screen">Cargando buses…</div>;
-  }
 
   return (
-    <div className="screen screen-scroll">
-      <div className="panel panel-wide">
-        <button className="back-button" onClick={() => navigate('/')}>
-          ← Volver
-        </button>
-        <h1 className="panel-title">Gestión de buses</h1>
-
-        <div className="form-section">
-          <h2 className="section-title">Registrar nuevo bus</h2>
-          <div className="form-group">
-            <label className="form-label" htmlFor="bus-placa">Placa (Ej: AHK-452)</label>
-            <input
-              id="bus-placa"
-              className="form-input"
-              placeholder="AHK-452"
-              style={{ textTransform: 'uppercase' }}
-              value={placa}
-              onChange={e => setPlaca(e.target.value)}
-            />
-          </div>
-          <button
-            className="form-button"
-            onClick={handleCreate}
-            disabled={creating}
-          >
-            {creating ? 'Registrando…' : 'Registrar Bus'}
-          </button>
-          {mensaje && <p className={`form-message ${mensaje.tipo}`}>{mensaje.texto}</p>}
+    <div className="stack">
+      <Card>
+        <CardHeader title="Registrar nuevo bus" description="La placa se guardará en mayúsculas." />
+        <div className="card-body">
+          <Field
+            id="bus-placa"
+            label="Placa (Ej: AHK-452)"
+            placeholder="AHK-452"
+            style={{ textTransform: 'uppercase' }}
+            value={placa}
+            onChange={e => setPlaca(e.target.value)}
+          />
+          <Button onClick={handleCreate} disabled={creating} icon={<Icon name="plus" size={16} />}>
+            {creating ? 'Registrando…' : 'Registrar bus'}
+          </Button>
         </div>
+      </Card>
 
-        <h2 className="section-title">Flota registrada</h2>
-        {buses.length === 0 ? (
-          <p className="empty-text">No hay buses registrados aún.</p>
+      <section>
+        <h2 className="section-title">
+          Flota registrada{' '}
+          {buses.length > 0 ? <span className="badge badge-info">{buses.length}</span> : null}
+        </h2>
+
+        {loading ? (
+          <p className="text-muted">Cargando buses…</p>
+        ) : buses.length === 0 ? (
+          <EmptyState
+            icon={<Icon name="bus" size={32} />}
+            title="No hay buses registrados"
+            hint="Registra el primero con el formulario de arriba."
+          />
         ) : (
           <ul className="list">
             {buses.map(item => (
-              <li key={item.placa} className="card">
-                <div className="card-info">
-                  <p className="card-title">{item.placa}</p>
-                  {item.creadoEn && (
-                    <p className="card-meta">Creado el: {formatDate(item.creadoEn)}</p>
-                  )}
-                  {item.creadoPor && (
-                    <p className="card-meta">Creado por: {resolveAdminName(item.creadoPor)}</p>
-                  )}
+              <li key={item.placa} className="row-card">
+                <div className="row-info">
+                  <div className="row-title">{item.placa}</div>
+                  {item.creadoEn ? (
+                    <div className="row-sub">
+                      Creado el {formatDate(item.creadoEn)}
+                      {item.creadoPor ? ` · ${resolveAdminName(admins, item.creadoPor)}` : ''}
+                    </div>
+                  ) : null}
                 </div>
-                <div className="card-actions">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    aria-label={`Activo: ${item.placa}`}
+                <div className="row-actions">
+                  <StatusBadge active={item.activo} />
+                  <ToggleSwitch
                     checked={item.activo}
-                    onChange={e => {
-                      const accion = item.activo ? 'desactivar' : 'activar';
-                      if (window.confirm(`¿Estás seguro que querés ${accion} el bus ${item.placa}?`)) {
-                        AdminService.toggleBusStatus(item.placa, e.target.checked).then(ok => {
-                          if (!ok) {
-                            setMensaje({ tipo: 'error', texto: `No se pudo ${accion} el bus. Inténtalo de nuevo.` });
-                          }
-                        });
-                      }
-                    }}
+                    label={`${item.activo ? 'Desactivar' : 'Activar'} el bus ${item.placa}`}
+                    onChange={next => setToggleTarget({ bus: item, next })}
                   />
                   <button
-                    className="icon-button icon-button-danger"
+                    type="button"
+                    className="btn btn-icon btn-icon-danger"
                     title="Eliminar"
-                    onClick={() => handleDelete(item)}
+                    aria-label={`Eliminar el bus ${item.placa}`}
+                    onClick={() => setDeleteTarget(item)}
                   >
-                    🗑️
+                    <Icon name="trash" size={16} />
                   </button>
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </section>
+
+      <ConfirmDialog
+        open={toggleTarget !== null}
+        title={toggleTarget?.next ? 'Activar bus' : 'Desactivar bus'}
+        message={`¿Deseas ${toggleTarget?.next ? 'activar' : 'desactivar'} el bus ${toggleTarget?.bus.placa}?`}
+        confirmLabel={toggleTarget?.next ? 'Activar' : 'Desactivar'}
+        danger={!toggleTarget?.next}
+        busy={busy}
+        onConfirm={handleToggle}
+        onCancel={() => setToggleTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Eliminar bus"
+        message={`¿Eliminar el bus ${deleteTarget?.placa}? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        danger
+        busy={busy}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 };

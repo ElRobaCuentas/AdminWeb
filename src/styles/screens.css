@@ -1,0 +1,245 @@
+/* ==========================================================================
+   Pantallas — Login, pantallas de auth (denegado/error) y detalles de vistas.
+   ========================================================================== */
+
+/* -------------------------- Login -------------------------- */
+.login {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+}
+
+.login-brand {
+  background:
+    radial-gradient(1200px 500px at 15% 10%, rgba(37, 99, 235, 0.35), transparent 60%),
+    radial-gradient(900px 500px at 90% 90%, rgba(6, 182, 212, 0.28), transparent 55%),
+    var(--color-sidebar);
+  color: #fff;
+  padding: var(--sp-12);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.login-brand-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-lg);
+}
+
+.login-brand-top .brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.login-brand-hero h1 {
+  color: #fff;
+  font-size: 34px;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.6px;
+  line-height: 1.15;
+  max-width: 12ch;
+}
+
+.login-brand-hero p {
+  margin-top: var(--sp-4);
+  color: var(--color-sidebar-text);
+  font-size: var(--fs-base);
+  max-width: 44ch;
+}
+
+.login-brand-list {
+  list-style: none;
+  margin-top: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.login-brand-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--color-sidebar-text);
+  font-size: var(--fs-md);
+}
+
+.login-brand-list li svg {
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.login-brand-foot {
+  font-size: var(--fs-xs);
+  color: var(--color-text-subtle);
+}
+
+.login-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-8) var(--sp-6);
+  background: var(--color-bg);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  padding: var(--sp-8);
+}
+
+.login-card h2 {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+}
+
+.login-card .login-sub {
+  color: var(--color-text-muted);
+  font-size: var(--fs-md);
+  margin-top: var(--sp-1);
+  margin-bottom: var(--sp-6);
+}
+
+.login-mobile-brand {
+  display: none;
+}
+
+@media (max-width: 880px) {
+  .login {
+    grid-template-columns: 1fr;
+  }
+
+  .login-brand {
+    display: none;
+  }
+
+  .login-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    font-weight: var(--fw-bold);
+    font-size: var(--fs-lg);
+    margin-bottom: var(--sp-6);
+  }
+
+  .login-mobile-brand .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: var(--color-primary);
+    color: #fff;
+  }
+}
+
+/* -------------------------- Pantallas de auth (denegado/error) -------------------------- */
+.auth-screen-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  padding: var(--sp-8);
+  text-align: center;
+}
+
+.auth-screen-card .auth-screen-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--sp-4);
+}
+
+.auth-screen-icon.is-warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.auth-screen-icon.is-danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.auth-screen-card h1 {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+}
+
+.auth-screen-card p {
+  color: var(--color-text-muted);
+  margin-top: var(--sp-2);
+  margin-bottom: var(--sp-6);
+}
+
+.auth-screen-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* -------------------------- Dashboard -------------------------- */
+.welcome-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-5) var(--sp-6);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(120deg, var(--color-primary), var(--color-accent));
+  color: #fff;
+  box-shadow: var(--shadow-md);
+  flex-wrap: wrap;
+}
+
+.welcome-banner h2 {
+  color: #fff;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+}
+
+.welcome-banner p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: var(--fs-md);
+  margin-top: 2px;
+}
+
+.welcome-banner .avatar {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.dashboard-today {
+  font-size: var(--fs-xs);
+  color: var(--color-text-subtle);
+}
+
+/* -------------------------- Asignaciones -------------------------- */
+.time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4);
+}
+
+@media (max-width: 520px) {
+  .time-grid {
+    grid-template-columns: 1fr;
+  }
+}

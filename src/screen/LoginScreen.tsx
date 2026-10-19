@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { firebaseAuth } from '../shared/config/firebase';
 import { isValidDni, normalizeDni, sanitizeDniInput } from '../shared/utils/dni';
+import { Button } from '../shared/ui/Button';
+import { Field } from '../shared/ui/Field';
+import { Icon } from '../shared/ui/Icon';
 
 export const LoginScreen = () => {
   const [dni, setDni] = useState('');
@@ -44,45 +47,87 @@ export const LoginScreen = () => {
     }
   };
 
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Enter') void handleLogin();
+  };
+
   return (
-    <div className="screen">
-      <div className="auth-card">
-        <h1 className="auth-title">Acceso para administradores</h1>
-
-        <div className="form-group">
-          <label className="form-label" htmlFor="dni">DNI</label>
-          <input
-            id="dni"
-            className="form-input"
-            inputMode="numeric"
-            maxLength={8}
-            value={dni}
-            onChange={e => setDni(sanitizeDniInput(e.target.value))}
-            autoComplete="username"
-          />
+    <div className="login">
+      <div className="login-brand">
+        <div className="login-brand-top">
+          <span className="brand-mark">
+            <Icon name="bus" size={22} />
+          </span>
+          El Burrito
         </div>
 
-        <div className="form-group">
-          <label className="form-label" htmlFor="password">Contraseña</label>
-          <input
-            id="password"
-            className="form-input"
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            autoComplete="current-password"
-          />
+        <div className="login-brand-hero">
+          <h1>Panel de administración</h1>
+          <p>
+            Gestiona conductores, buses y asignaciones diarias del sistema de
+            transporte en tiempo real.
+          </p>
+          <ul className="login-brand-list">
+            <li>
+              <Icon name="drivers" size={18} /> Registro y control de conductores
+            </li>
+            <li>
+              <Icon name="bus" size={18} /> Administración de la flota
+            </li>
+            <li>
+              <Icon name="assignment" size={18} /> Asignaciones del turno diario
+            </li>
+          </ul>
         </div>
 
-        {error && <p className="form-error">{error}</p>}
+        <div className="login-brand-foot">SYTHOR · Ecosistema El Burrito</div>
+      </div>
 
-        <button
-          className="form-button"
-          onClick={handleLogin}
-          disabled={loading}
-        >
-          {loading ? 'Entrando…' : 'Entrar'}
-        </button>
+      <div className="login-panel">
+        <div className="login-card">
+          <div className="login-mobile-brand">
+            <span className="brand-mark">
+              <Icon name="bus" size={20} />
+            </span>
+            El Burrito
+          </div>
+
+          <h2>Acceso para administradores</h2>
+          <p className="login-sub">Ingresa con tu DNI y contraseña.</p>
+
+          <div onKeyDown={handleKeyDown}>
+            <Field
+              id="dni"
+              label="DNI"
+              inputMode="numeric"
+              maxLength={8}
+              value={dni}
+              onChange={e => setDni(sanitizeDniInput(e.target.value))}
+              autoComplete="username"
+            />
+
+            <Field
+              id="password"
+              label="Contraseña"
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+
+            {error ? <p className="field-error">{error}</p> : null}
+
+            <Button
+              block
+              onClick={handleLogin}
+              disabled={loading}
+              className="mt-4"
+              icon={loading ? undefined : <Icon name="logout" size={16} />}
+            >
+              {loading ? 'Entrando…' : 'Entrar'}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -19,28 +19,55 @@ Panel web para la gestión de conductores, buses y asignaciones diarias del sist
 ```
 src/
 ├── App.tsx                          ← Auth gate: sesión → verificación de rol (checking/admin/denied/error)
+├── index.css                        ← Punto de entrada de estilos (importa src/styles/*)
+├── styles/                          ← Sistema de diseño (tokens + layout + componentes + overlays + pantallas)
 ├── screen/
 │   └── LoginScreen.tsx              ← Formulario de login (DNI + contraseña)
 ├── navigation/
-│   └── AdminNavigator.tsx           ← Rutas del panel
+│   └── AdminNavigator.tsx           ← Rutas del panel (envueltas por el AppShell)
 ├── features/admin/
 │   ├── screen/
-│   │   ├── AdminPanelScreen.tsx     ← Menú principal del admin
+│   │   ├── AdminPanelScreen.tsx     ← Dashboard: métricas de hoy + accesos a módulos
 │   │   ├── ChoferesScreen.tsx       ← Gestión de conductores (crear, editar, activar/desactivar)
 │   │   ├── BusesScreen.tsx          ← Gestión de buses (crear, activar/desactivar, eliminar)
 │   │   ├── AsignacionesScreen.tsx   ← Asignaciones diarias conductor ↔ bus
 │   │   └── AdminsScreen.tsx         ← Gestión de administradores
-│   └── services/
-│       ├── admin_service.ts         ← Toda la lógica CRUD (Firebase Auth + RTDB)
-│       └── admin_check.ts           ← Verificación de rol admin en /administradores/{uid}
+│   ├── services/
+│   │   ├── admin_service.ts         ← Toda la lógica CRUD (Firebase Auth + RTDB)
+│   │   └── admin_check.ts           ← Verificación de rol admin en /administradores/{uid}
+│   └── utils/
+│       └── turno.ts                 ← Parseo/format de horarios de turno
 └── shared/
     ├── config/
     │   ├── env.ts                   ← Validación de variables VITE_FIREBASE_*
     │   └── firebase.ts              ← Inicialización de Firebase (Auth + RTDB)
+    ├── layout/
+    │   ├── AppShell.tsx             ← Sidebar + topbar + drawer móvil; provee la sesión (admin)
+    │   └── SessionContext.tsx       ← Contexto con los datos del admin en sesión
+    ├── ui/                          ← Primitivas reutilizables (Button, Field, Card, Modal, Toast…)
     └── utils/
         ├── dni.ts                   ← Normalización y validación de DNI (8 dígitos)
+        ├── format.ts                ← Formateo de fechas y nombres de admin
         └── timeout.ts               ← Helper con timeout para reads de RTDB
 ```
+
+## Interfaz y diseño
+
+La interfaz usa un **sistema de diseño propio basado en CSS con tokens** (sin dependencias de UI). `src/index.css` solo importa las hojas de `src/styles/`:
+
+| Hoja | Contenido |
+|------|-----------|
+| `tokens.css` | Variables de diseño (colores, espaciado, radios, sombras, tipografía) |
+| `base.css` | Reset, tipografía base e interacciones globales |
+| `layout.css` | App shell: sidebar, topbar, contenido y drawer móvil |
+| `components.css` | Primitivas reutilizables (botones, campos, cards, badges, etc.) |
+| `overlays.css` | Modal, diálogo de confirmación y toasts |
+| `screens.css` | Login, pantallas de auth y detalles de vistas |
+
+- **Paleta "Operations Blue", solo tema claro:** primario `#2563EB`, complementario cian `#06B6D4`, sidebar oscuro `#0F172A`, fondo `#F8FAFC`.
+- **App shell** (`shared/layout/AppShell.tsx`): sidebar + topbar en escritorio; drawer en móvil. Muestra la identidad del admin en sesión y expone los datos vía `SessionContext`/`useSession`. Las rutas (`AdminNavigator`) se renderizan dentro del shell.
+- **Primitivas** (`shared/ui/`): `Button`, `Field`, `Card`/`CardHeader`, `StatCard`, `StatusBadge`/`Badge`, `ToggleSwitch`, `Modal`/`ConfirmDialog`, `Toast` (+ `useToast` en `toastContext.ts`), `EmptyState`/`Spinner`/`LoadingScreen`, `PageHeader` e `Icon` (set de iconos SVG propio).
+- **Confirmaciones y avisos:** no se usa `window.confirm`; las acciones se confirman con `ConfirmDialog` y los resultados se comunican con toasts.
 
 ## Autenticación y autorización
 
@@ -55,7 +82,7 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 
 | Módulo | Ruta | Descripción |
 |--------|------|-------------|
-| **Panel de Control** | `/` | Menú principal con acceso a los 4 módulos |
+| **Panel de Control** | `/` | Dashboard con métricas de hoy (conductores activos, buses activos, asignaciones) y accesos a los 4 módulos |
 | **Choferes** | `/choferes` | Crear, listar, editar y activar/desactivar conductores. Desactivar conserva su cuenta y su historial (no se elimina). Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`) y el nodo en `/choferes/{dni}` |
 | **Buses** | `/buses` | Crear, listar, activar/desactivar y eliminar buses. Al crear, se inicializa `/ubicacion_buses/{placa}` con `isActive: false` |
 | **Asignaciones** | `/asignaciones` | Vincular un conductor con un bus para el día actual. Valida que el conductor no tenga otra asignación activa hoy (el bus no se valida en el flujo actual). Cancelar desactiva sin eliminar |

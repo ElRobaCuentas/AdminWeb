@@ -18,16 +18,16 @@ Panel web para la gestión de conductores, buses y asignaciones diarias del sist
 
 ```
 src/
-├── App.tsx                          ← Auth gate: sesión → admin check → role error
+├── App.tsx                          ← Auth gate: sesión → verificación de rol (checking/admin/denied/error)
 ├── screen/
-│   └── LoginScreen.tsx              ← Formulario de login (email + password)
+│   └── LoginScreen.tsx              ← Formulario de login (DNI + contraseña)
 ├── navigation/
 │   └── AdminNavigator.tsx           ← Rutas del panel
 ├── features/admin/
 │   ├── screen/
 │   │   ├── AdminPanelScreen.tsx     ← Menú principal del admin
-│   │   ├── ChoferesScreen.tsx       ← CRUD de conductores
-│   │   ├── BusesScreen.tsx          ← CRUD de buses
+│   │   ├── ChoferesScreen.tsx       ← Gestión de conductores (crear, editar, activar/desactivar)
+│   │   ├── BusesScreen.tsx          ← Gestión de buses (crear, activar/desactivar, eliminar)
 │   │   ├── AsignacionesScreen.tsx   ← Asignaciones diarias conductor ↔ bus
 │   │   └── AdminsScreen.tsx         ← Gestión de administradores
 │   └── services/
@@ -35,17 +35,19 @@ src/
 │       └── admin_check.ts           ← Verificación de rol admin en /administradores/{uid}
 └── shared/
     ├── config/
+    │   ├── env.ts                   ← Validación de variables VITE_FIREBASE_*
     │   └── firebase.ts              ← Inicialización de Firebase (Auth + RTDB)
     └── utils/
+        ├── dni.ts                   ← Normalización y validación de DNI (8 dígitos)
         └── timeout.ts               ← Helper con timeout para reads de RTDB
 ```
 
 ## Autenticación y autorización
 
-1. El usuario ingresa email y password (Firebase Auth).
-2. Al autenticarse, `App.tsx` llama `existeAdministrador(uid)` que lee `/administradores/{uid}`.
-3. Si el nodo existe → acceso al panel. Si no → pantalla "No autorizado".
-4. La verificación tiene un timeout de 10s para evitar spinners infinitos sin red (C4.AUTH).
+1. El usuario ingresa su DNI y contraseña. El correo interno es `{dni}@admin.com` (Firebase Auth).
+2. Al autenticarse, `App.tsx` pasa por un estado explícito mientras llama `existeAdministrador(uid)`, que lee `/administradores/{uid}`.
+3. Si el nodo existe → acceso al panel. Si `PERMISSION_DENIED` (la regla exige ser admin) → pantalla "No autorizado".
+4. Un fallo de red o el timeout de 10s (C4.AUTH) no se interpretan como denegación: muestran la pantalla recuperable "No se pudo verificar" con Reintentar.
 
 Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conductores y estudiantes no pueden entrar.
 
@@ -54,7 +56,7 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 | Módulo | Ruta | Descripción |
 |--------|------|-------------|
 | **Panel de Control** | `/` | Menú principal con acceso a los 4 módulos |
-| **Choferes** | `/choferes` | Crear, listar, editar, activar/desactivar y eliminar conductores. Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`) y el nodo en `/choferes/{dni}` |
+| **Choferes** | `/choferes` | Crear, listar, editar y activar/desactivar conductores. Desactivar conserva su cuenta y su historial (no se elimina). Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`) y el nodo en `/choferes/{dni}` |
 | **Buses** | `/buses` | Crear, listar, activar/desactivar y eliminar buses. Al crear, se inicializa `/ubicacion_buses/{placa}` con `isActive: false` |
 | **Asignaciones** | `/asignaciones` | Vincular un conductor con un bus para el día actual. Valida que el conductor no tenga otra asignación activa hoy (el bus no se valida en el flujo actual). Cancelar desactiva sin eliminar |
 | **Administradores** | `/admins` | Crear, editar y eliminar cuentas de administrador. Crear genera cuenta Firebase Auth (`{dni}@admin.com`) y nodo en `/administradores/{uid}` |
@@ -81,6 +83,8 @@ VITE_FIREBASE_DATABASE_URL=
 VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_APP_ID=
 ```
+
+Al iniciar, `shared/config/env.ts` valida que las cinco variables existan. Si falta alguna, la app falla de inmediato con un mensaje que indica cuáles faltan (sin imprimir valores). Las variables `VITE_*` forman parte del bundle cliente: no son secretos.
 
 ## Desarrollo
 
@@ -116,6 +120,8 @@ npm run lint           # ejecuta Oxlint
 
 ## Notas para IA
 
-- `admin_service.ts` usa una **app temporal por operación** (`initializeApp(..., 'reg_${Date.now()}')`) con `inMemoryPersistence` para crear/eliminar cuentas Auth de conductores y otros admins sin cerrar la sesión del admin actual.
-- `admin_check.ts` tiene un timeout de 10s para el read de `/administradores/{uid}`. Esto es intencional (C4.AUTH): sin red, `get()` de RTDB nunca resuelve ni rechaza.
-- Los correos de conductores son `{dni}@conductor.com` y los de admins son `{dni}@admin.com`. Estas convenciones están hardcodeadas en `admin_service.ts`.
+- `admin_service.ts` usa una **app temporal por operación** (`initializeApp(..., 'reg_${Date.now()}')`) con `inMemoryPersistence` para crear cuentas Auth de conductores y otros admins sin cerrar la sesión del admin actual.
+- `admin_check.ts` tiene un timeout de 10s para el read de `/administradores/{uid}`. Esto es intencional (C4.AUTH): sin red, `get()` de RTDB nunca resuelve ni rechaza. Un `PERMISSION_DENIED` en esa ruta se interpreta como "no es administrador"; los fallos de red se propagan.
+- Los conductores se **desactivan**, no se eliminan: no existe `deleteChofer`. Desactivar solo cambia `activo`, conservando cuenta Auth, `uid` e historial.
+- El DNI se normaliza y valida con `shared/utils/dni.ts` (exactamente 8 dígitos) en pantallas y servicios.
+- Los correos de conductores son `{dni}@conductor.com` y los de admins son `{dni}@admin.com`. Estas convenciones están hardcodeadas en `admin_service.ts` y `LoginScreen.tsx`.

@@ -66,7 +66,9 @@ src/main.tsx → App.tsx (auth gate)
 | `src/navigation/AdminNavigator.tsx` | Rutas: `/`, `/choferes`, `/buses`, `/asignaciones`, `/admins`, `*`→`/` |
 | `src/features/admin/services/admin_service.ts` | **Crítico**: toda la lógica CRUD (Auth + RTDB) |
 | `src/features/admin/services/admin_check.ts` | Verificación de rol en `/administradores/{uid}` |
-| `src/shared/config/firebase.ts` | Inicialización Firebase (Auth + RTDB) desde `VITE_FIREBASE_*` |
+| `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` al iniciar |
+| `src/shared/config/firebase.ts` | Inicialización Firebase (Auth + RTDB) desde el config validado |
+| `src/shared/utils/dni.ts` | Normalización y validación de DNI (8 dígitos) |
 | `src/shared/utils/timeout.ts` | `withTimeout` para reads de RTDB |
 
 Para detalles de datos y flujos: `docs/ARCHITECTURE.md` (sección AdminWeb) y
@@ -78,15 +80,20 @@ Para detalles de datos y flujos: `docs/ARCHITECTURE.md` (sección AdminWeb) y
 
 ```
 onAuthStateChanged → sin usuario → LoginScreen
-                   → con usuario → existeAdministrador(uid)
-                        → true  → AdminNavigator
-                        → false → "No autorizado"
-                        → error/timeout → "No se pudo verificar" (Reintentar / Cerrar Sesión)
+                   → con usuario → estado "checking" mientras existeAdministrador(uid)
+                        → nodo existe       → AdminNavigator
+                        → PERMISSION_DENIED → "No autorizado"
+                        → timeout / red     → "No se pudo verificar" (Reintentar / Cerrar Sesión)
 ```
 
 - El acceso requiere que exista el nodo `/administradores/{uid}`.
+- Mientras el rol está en `checking` **no** se muestra "No autorizado": es un
+  estado pendiente, no una denegación. Esto evita el flash al iniciar sesión.
+- En `/administradores/{uid}` la regla exige ser admin, así que
+  `PERMISSION_DENIED` equivale a "no es administrador".
 - La verificación de rol tiene un **timeout de 10s** (`ROLE_TIMEOUT_MS`).
-  Sin red, `get()` de RTDB nunca resuelve ni rechaza.
+  Sin red, `get()` de RTDB nunca resuelve ni rechaza. Timeout y errores de red
+  **no** se interpretan como denegación (van a "No se pudo verificar").
 
 ---
 
@@ -100,15 +107,15 @@ El timeout es lo que permite mostrar la pantalla Reintentar/Cerrar Sesión.
 
 ### 6.2 Usar app temporal para gestionar cuentas Auth
 
-Crear/eliminar cuentas de conductor o de admin usa una **app Firebase temporal
-por operación** (`initializeApp(firebaseConfig, 'reg_...' | 'del_...' | 'admin_...')`)
-con `inMemoryPersistence`. Nunca operar estas cuentas con la app/sesión del
+Crear cuentas de conductor o de admin usa una **app Firebase temporal por
+operación** (`initializeApp(firebaseConfig, 'reg_...' | 'admin_...')`) con
+`inMemoryPersistence`. Nunca operar estas cuentas con la app/sesión del
 administrador actual: se cerraría su sesión.
 
 ### 6.3 No leer `uid` desde `/choferes_uids`
 
-`/choferes_uids` tiene `.read: false`. El `uid` del conductor se lee de
-`/choferes/{dni}`. `deleteChofer` ya lo hace así; no lo cambies.
+`/choferes_uids` tiene `.read: false`. Si necesitás el `uid` de un conductor,
+leelo de `/choferes/{dni}`. No agregues reads desde `/choferes_uids`.
 
 ### 6.4 Convenciones de correo hardcodeadas
 
@@ -153,6 +160,30 @@ Auth + nodo `/administradores/{uid}`). A partir de ahí, los demás se crean
 desde el panel (`AdminsScreen` → `createAdmin()`): la escritura sobre
 `/administradores` exige ser un administrador ya existente.
 
+### 6.11 Los conductores se desactivan, no se eliminan
+
+No existe `deleteChofer`. Retirar a un conductor de la actividad es
+`toggleChoferStatus(dni, false)`. Se conservan su cuenta Auth, su `uid`, el
+nodo `/choferes/{dni}` y el vínculo `/choferes_uids/{uid}`. Reactivar es el
+mismo toggle con `true`, sin crear una cuenta nueva. No reintroduzcas la
+eliminación física como operación habitual.
+
+Nota: desactivar **no** cancela asignaciones activas ni detiene por sí solo el
+tracking de la DriverApp (que no consulta el flag `activo` del conductor). Es
+una limitación conocida; no modifiques DriverApp desde este panel.
+
+### 6.12 DNI: exactamente 8 dígitos numéricos
+
+Validá con `shared/utils/dni.ts` (`isValidDni` / `normalizeDni`) tanto en las
+pantallas como en los servicios (`createChofer`, `createAdmin`) antes de operar.
+Los inputs de DNI solo aceptan dígitos (`sanitizeDniInput`) y usan
+`maxLength={8}`. No cambies las convenciones de correo.
+
+### 6.13 Variables de entorno validadas al iniciar
+
+`shared/config/env.ts` exige las cinco `VITE_FIREBASE_*` antes de inicializar.
+Si agregás una variable de configuración nueva, sumala ahí y al `.env.example`.
+
 ---
 
 ## 7. Convenciones
@@ -180,6 +211,7 @@ desde el panel (`AdminsScreen` → `createAdmin()`): la escritura sobre
 | Bug en diagnóstico | `docs/TROUBLESHOOTING.md` |
 | Bug corregido | `docs/BUGS_RESUELTOS/` |
 | Limitación | `docs/PROJECT_CONTEXT.md` |
+| Variable de entorno (`VITE_*`) | `README.md` (Variables de entorno) + `.env.example` |
 | Regla IA | `AGENTS.md` |
 | Setup / stack | `README.md` |
 
@@ -193,6 +225,8 @@ desde el panel (`AdminsScreen` → `createAdmin()`): la escritura sobre
 - [ ] Auth gate intacto (login → verificación de rol → panel → logout).
 - [ ] Operaciones de Auth vía app temporal (no afectan la sesión del admin).
 - [ ] Convenciones de correo sin cambios.
+- [ ] DNI validado (8 dígitos) en pantallas y servicios.
+- [ ] Sin `deleteChofer`: los conductores se desactivan, no se eliminan.
 - [ ] Documentación sincronizada (todos los docs afectados).
 
 ---

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAuth } from 'firebase/auth';
 import { AdminService, type Administrador } from '../services/admin_service';
+import { isValidDni, normalizeDni, sanitizeDniInput } from '../../../shared/utils/dni';
 
 interface Mensaje {
   tipo: 'exito' | 'error';
@@ -37,8 +38,9 @@ export const AdminsScreen = () => {
   const handleCrear = async () => {
     setMensaje(null);
 
-    if (dni.trim().length < 8) {
-      setMensaje({ tipo: 'error', texto: 'DNI inválido (mínimo 8 dígitos).' });
+    const dniNormalizado = normalizeDni(dni);
+    if (!isValidDni(dniNormalizado)) {
+      setMensaje({ tipo: 'error', texto: 'El DNI debe tener 8 dígitos numéricos.' });
       return;
     }
     if (!nombres.trim()) {
@@ -56,14 +58,14 @@ export const AdminsScreen = () => {
 
     setCreating(true);
     try {
-      await AdminService.createAdmin(dni.trim(), nombres.trim(), apellidos.trim(), password.trim());
+      await AdminService.createAdmin(dniNormalizado, nombres.trim(), apellidos.trim(), password.trim());
       setMensaje({ tipo: 'exito', texto: 'Administrador creado correctamente.' });
       setDni('');
       setNombres('');
       setApellidos('');
       setPassword('');
-    } catch (err: any) {
-      setMensaje({ tipo: 'error', texto: err.message || 'Error al crear administrador.' });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: (err as Error).message || 'Error al crear administrador.' });
     } finally {
       setCreating(false);
     }
@@ -121,9 +123,10 @@ export const AdminsScreen = () => {
             <input
               id="admin-dni"
               className="form-input"
-              maxLength={12}
+              inputMode="numeric"
+              maxLength={8}
               value={dni}
-              onChange={e => setDni(e.target.value)}
+              onChange={e => setDni(sanitizeDniInput(e.target.value))}
             />
           </div>
 

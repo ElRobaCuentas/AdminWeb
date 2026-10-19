@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AdminService, type Chofer, type Administrador } from '../services/admin_service';
+import { isValidDni, normalizeDni, sanitizeDniInput } from '../../../shared/utils/dni';
 
 interface Mensaje {
   tipo: 'exito' | 'error';
@@ -47,14 +48,15 @@ export const ChoferesScreen = () => {
       setMensaje({ tipo: 'error', texto: 'Todos los campos son obligatorios' });
       return;
     }
-    if (dni.length < 8) {
-      setMensaje({ tipo: 'error', texto: 'El DNI debe tener 8 dígitos' });
+    const dniNormalizado = normalizeDni(dni);
+    if (!isValidDni(dniNormalizado)) {
+      setMensaje({ tipo: 'error', texto: 'El DNI debe tener 8 dígitos numéricos.' });
       return;
     }
 
     setCreating(true);
     try {
-      await AdminService.createChofer({ dni, nombre, apellidos });
+      await AdminService.createChofer({ dni: dniNormalizado, nombre, apellidos });
       setMensaje({ tipo: 'exito', texto: 'Chofer registrado correctamente. Su clave es su DNI.' });
       setDni('');
       setNombre('');
@@ -78,25 +80,6 @@ export const ChoferesScreen = () => {
       setMensaje({ tipo: 'error', texto: (error as Error).message });
     } finally {
       setSaving(false);
-    }
-  };
-
-  // 4. Manejar Eliminación
-  const handleDelete = async (chofer: Chofer) => {
-    setMensaje(null);
-    const tieneAsignacion = await AdminService.hasActiveAssignment(chofer.dni);
-    if (tieneAsignacion) {
-      setMensaje({ tipo: 'error', texto: 'Este conductor tiene una asignación activa. Cancele la asignación primero.' });
-      return;
-    }
-    if (!window.confirm(`¿Eliminar a ${chofer.nombre} ${chofer.apellidos}? Esta acción no se puede deshacer.`)) {
-      return;
-    }
-    try {
-      await AdminService.deleteChofer(chofer.dni);
-      setMensaje({ tipo: 'exito', texto: `Conductor ${chofer.nombre} eliminado correctamente.` });
-    } catch (error) {
-      setMensaje({ tipo: 'error', texto: (error as Error).message });
     }
   };
 
@@ -135,9 +118,10 @@ export const ChoferesScreen = () => {
             <input
               id="chofer-dni"
               className="form-input"
+              inputMode="numeric"
               maxLength={8}
               value={dni}
-              onChange={e => setDni(e.target.value)}
+              onChange={e => setDni(sanitizeDniInput(e.target.value))}
             />
           </div>
           <div className="form-group">
@@ -222,8 +206,11 @@ export const ChoferesScreen = () => {
                         checked={item.activo}
                         onChange={() => {
                           const accion = item.activo ? 'desactivar' : 'activar';
-                          if (window.confirm(`¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?`)) {
-                            AdminService.toggleChoferStatus(item.dni, item.activo).then(ok => {
+                          const detalle = item.activo
+                            ? ' Se conservará su cuenta y su historial, y podrá reactivarlo cuando quieras.'
+                            : '';
+                          if (window.confirm(`¿Estás seguro que querés ${accion} a ${item.nombre} ${item.apellidos}?${detalle}`)) {
+                            AdminService.toggleChoferStatus(item.dni, !item.activo).then(ok => {
                               if (!ok) {
                                 setMensaje({ tipo: 'error', texto: `No se pudo ${accion} al conductor. Inténtalo de nuevo.` });
                               }
@@ -241,13 +228,6 @@ export const ChoferesScreen = () => {
                         }}
                       >
                         ✏️
-                      </button>
-                      <button
-                        className="icon-button icon-button-danger"
-                        title="Eliminar"
-                        onClick={() => handleDelete(item)}
-                      >
-                        🗑️
                       </button>
                     </div>
                   </>

@@ -1,7 +1,7 @@
 import { deleteApp, initializeApp } from 'firebase/app';
 import {
   createUserWithEmailAndPassword, getAuth, initializeAuth, inMemoryPersistence,
-  signInWithEmailAndPassword, signOut, deleteUser,
+  signOut,
 } from 'firebase/auth';
 import {
   get, onValue, push, ref, remove, set, update,
@@ -9,12 +9,14 @@ import {
 import {
   firebaseConfig, firebaseDatabase,
 } from '../../../shared/config/firebase';
+import { isValidDni, normalizeDni } from '../../../shared/utils/dni';
 
 export interface Chofer {
   dni: string;
   nombre: string;
   apellidos: string;
   activo: boolean;
+  uid?: string;
   creadoEn?: number;
   creadoPor?: string | null;
 }
@@ -44,7 +46,6 @@ export interface Administrador {
   nombres?: string;
   apellidos?: string;
   correo?: string;
-  activo?: boolean;
   creadoEn?: number;
   creadoPor?: string | null;
 }
@@ -87,15 +88,20 @@ export const AdminService = {
 
   // 2. Crear Chofer (Auth + Realtime Database)
   createChofer: async (chofer: Omit<Chofer, 'activo'>) => {
-    const choferRef = ref(firebaseDatabase, `${CHOFERES_PATH}/${chofer.dni}`);
+    const dni = normalizeDni(chofer.dni);
+    if (!isValidDni(dni)) {
+      throw new Error('El DNI debe tener exactamente 8 dígitos numéricos.');
+    }
+
+    const choferRef = ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`);
 
     const snapshot = await get(choferRef);
     if (snapshot.exists()) {
       throw new Error('Ya existe un conductor registrado con este DNI.');
     }
 
-    const email = `${chofer.dni}@conductor.com`;
-    const password = chofer.dni;
+    const email = `${dni}@conductor.com`;
+    const password = dni;
 
     // App temporal con auth en memoria (no toca localStorage del admin)
     const tempApp = initializeApp(firebaseConfig, `reg_${Date.now()}`);
@@ -131,7 +137,7 @@ export const AdminService = {
       // Vinculo uid -> dni para la autorizacion RTDB de /ubicacion_buses (ADR-023)
       await set(
         ref(firebaseDatabase, `${CHOFERES_UIDS_PATH}/${credential.user.uid}`),
-        chofer.dni,
+        dni,
       );
       return true;
     } catch (error) {
@@ -140,10 +146,10 @@ export const AdminService = {
   },
 
   // 3. Toggle Activo / Inactivo
-  toggleChoferStatus: async (dni: string, currentStatus: boolean) => {
+  toggleChoferStatus: async (dni: string, newStatus: boolean) => {
     try {
       await update(ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`), {
-        activo: !currentStatus,
+        activo: newStatus,
       });
       return true;
     } catch (error) {
@@ -312,29 +318,18 @@ export const AdminService = {
   // EDICIÓN Y ELIMINACIÓN
   // ============================
 
-  // 5. Verificar si un conductor tiene asignación activa HOY
-  hasActiveAssignment: async (dni: string): Promise<boolean> => {
-    const today = AdminService.getTodayDateString();
-    const snapshot = await get(ref(firebaseDatabase, ASIGNACIONES_PATH));
-    if (!snapshot.exists()) return false;
-    const data = snapshot.val();
-    return Object.values(data).some(
-      (a: any) => a.choferId === dni && a.fecha === today && a.activo === true,
-    );
-  },
-
-  // 6. Verificar si un bus tiene asignación activa HOY
+  // 5. Verificar si un bus tiene asignación activa HOY
   hasActiveBusAssignment: async (placa: string): Promise<boolean> => {
     const today = AdminService.getTodayDateString();
     const snapshot = await get(ref(firebaseDatabase, ASIGNACIONES_PATH));
     if (!snapshot.exists()) return false;
-    const data = snapshot.val();
+    const data = snapshot.val() as Record<string, Asignacion>;
     return Object.values(data).some(
-      (a: any) => a.busId === placa && a.fecha === today && a.activo === true,
+      (a: Asignacion) => a.busId === placa && a.fecha === today && a.activo === true,
     );
   },
 
-  // 7. Editar conductor (nombre y apellidos)
+  // 6. Editar conductor (nombre y apellidos)
   updateChofer: async (dni: string, data: { nombre: string; apellidos: string }) => {
     await update(ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`), {
       nombre: data.nombre.trim(),
@@ -343,37 +338,7 @@ export const AdminService = {
     return true;
   },
 
-  // 8. Eliminar conductor (RTDB primero con auth admin, luego Auth del conductor)
-  deleteChofer: async (dni: string) => {
-    // Leer uid desde /choferes/{dni} (no de /choferes_uids, que tiene .read: false)
-    const choferSnapshot = await get(ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`));
-    const uid = choferSnapshot.exists() ? (choferSnapshot.val().uid as string | undefined) : null;
-
-    // Eliminar registros de RTDB (con auth de admin activa)
-    await remove(ref(firebaseDatabase, `${CHOFERES_PATH}/${dni}`));
-    if (uid) {
-      await remove(ref(firebaseDatabase, `${CHOFERES_UIDS_PATH}/${uid}`));
-    }
-
-    // Eliminar cuenta de Auth del conductor (app temporal con auth en memoria)
-    const email = `${dni}@conductor.com`;
-    const tempApp = initializeApp(firebaseConfig, `del_${Date.now()}`);
-    const tempAuth = initializeAuth(tempApp, { persistence: inMemoryPersistence });
-
-    try {
-      await signInWithEmailAndPassword(tempAuth, email, dni);
-      await deleteUser(tempAuth.currentUser!);
-    } catch {
-      // Auth ya no existe o falló — la eliminación RTDB ya se hizo
-    } finally {
-      try { await signOut(tempAuth); } catch { /* ignore */ }
-      try { await deleteApp(tempApp); } catch { /* ignore */ }
-    }
-
-    return true;
-  },
-
-  // 9. Eliminar bus (RTDB + ubicacion_buses)
+  // 7. Eliminar bus (RTDB + ubicacion_buses)
   deleteBus: async (placa: string) => {
     await remove(ref(firebaseDatabase, `${BUSES_PATH}/${placa}`));
     await remove(ref(firebaseDatabase, `/ubicacion_buses/${placa}`));
@@ -384,21 +349,26 @@ export const AdminService = {
   // GESTIÓN DE ADMINS
   // ============================
 
-  // 10. Crear Admin (Auth + RTDB)
+  // 8. Crear Admin (Auth + RTDB)
   createAdmin: async (dni: string, nombres: string, apellidos: string, password: string) => {
+    const dniNormalizado = normalizeDni(dni);
+    if (!isValidDni(dniNormalizado)) {
+      throw new Error('El DNI debe tener exactamente 8 dígitos numéricos.');
+    }
+
     const adminRef = ref(firebaseDatabase, `${ADMINISTRADORES_PATH}`);
 
     // Verificar que no exista otro admin con el mismo DNI
     const snapshot = await get(adminRef);
     if (snapshot.exists()) {
-      const data = snapshot.val();
+      const data = snapshot.val() as Record<string, Administrador>;
       const yaExiste = Object.values(data).some(
-        (a: any) => a.dni === dni,
+        (a: Administrador) => a.dni === dniNormalizado,
       );
       if (yaExiste) throw new Error('Ya existe un administrador registrado con este DNI.');
     }
 
-    const email = `${dni}@admin.com`;
+    const email = `${dniNormalizado}@admin.com`;
 
     // App temporal con auth en memoria (no toca localStorage del admin actual)
     const tempApp = initializeApp(firebaseConfig, `admin_${Date.now()}`);
@@ -428,7 +398,7 @@ export const AdminService = {
       await set(
         ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${credential.user.uid}`),
         {
-          dni,
+          dni: dniNormalizado,
           nombres: nombres.trim(),
           apellidos: apellidos.trim(),
           correo: email,
@@ -444,7 +414,7 @@ export const AdminService = {
     }
   },
 
-  // 11. Suscripción en tiempo real a administradores
+  // 9. Suscripción en tiempo real a administradores
   subscribeToAdministradores: (onUpdate: (admins: Administrador[]) => void) => {
     const dbRef = ref(firebaseDatabase, ADMINISTRADORES_PATH);
     const unsubscribe = onValue(
@@ -469,7 +439,7 @@ export const AdminService = {
     return unsubscribe;
   },
 
-  // 12. Editar admin (nombre/apellidos)
+  // 10. Editar admin (nombre/apellidos)
   updateAdmin: async (uid: string, data: { nombres: string; apellidos: string }) => {
     await update(ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${uid}`), {
       nombres: data.nombres.trim(),
@@ -478,13 +448,13 @@ export const AdminService = {
     return true;
   },
 
-  // 13. Eliminar admin (RTDB; la cuenta Auth se borra manualmente en consola)
+  // 11. Eliminar admin (RTDB; la cuenta Auth se borra manualmente en consola)
   deleteAdmin: async (uid: string) => {
     await remove(ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${uid}`));
     return true;
   },
 
-  // 14. Obtener datos de un admin (para mostrar identidad en sesión)
+  // 12. Obtener datos de un admin (para mostrar identidad en sesión)
   getAdministrador: async (uid: string): Promise<Administrador | null> => {
     const snapshot = await get(ref(firebaseDatabase, `${ADMINISTRADORES_PATH}/${uid}`));
     if (!snapshot.exists()) return null;

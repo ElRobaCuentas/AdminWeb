@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { firebaseAuth } from '../shared/config/firebase';
+import { isValidDni, normalizeDni, sanitizeDniInput } from '../shared/utils/dni';
 
 export const LoginScreen = () => {
   const [dni, setDni] = useState('');
@@ -10,8 +11,8 @@ export const LoginScreen = () => {
 
   const handleLogin = async () => {
     setError('');
-    if (dni.trim().length < 8) {
-      setError('Ingresa un DNI válido (mínimo 8 dígitos).');
+    if (!isValidDni(normalizeDni(dni))) {
+      setError('El DNI debe tener 8 dígitos numéricos.');
       return;
     }
     if (!password.trim()) {
@@ -21,7 +22,7 @@ export const LoginScreen = () => {
 
     setLoading(true);
     try {
-      const email = `${dni.trim()}@admin.com`;
+      const email = `${normalizeDni(dni)}@admin.com`;
       await signInWithEmailAndPassword(firebaseAuth, email, password);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
@@ -54,9 +55,9 @@ export const LoginScreen = () => {
             id="dni"
             className="form-input"
             inputMode="numeric"
-            maxLength={12}
+            maxLength={8}
             value={dni}
-            onChange={e => setDni(e.target.value)}
+            onChange={e => setDni(sanitizeDniInput(e.target.value))}
             autoComplete="username"
           />
         </div>

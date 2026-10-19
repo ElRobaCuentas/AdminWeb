@@ -52,7 +52,7 @@ export const AdminPanelScreen = () => {
 
           <button className="menu-button" onClick={() => navigate('/buses')}>
             Gestión de buses
-            <span>Registrar placas, modelos y estado de los vehículos</span>
+            <span>Registrar placas y estado de los vehículos</span>
           </button>
 
           <button className="menu-button" onClick={() => navigate('/asignaciones')}>

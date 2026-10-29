@@ -29,7 +29,7 @@ const MODULES: ModuleLink[] = [
     to: '/asignaciones',
     icon: 'assignment',
     title: 'Asignaciones diarias',
-    description: 'Vincular conductores con vehículos para el turno de hoy.',
+    description: 'Vincular conductores con vehículos para hoy o fechas futuras.',
   },
   {
     to: '/admins',
@@ -54,9 +54,12 @@ export const AdminPanelScreen = () => {
     const unsubBuses = AdminService.subscribeToBuses(data => {
       setBusesActivos(data.filter(b => b.activo).length);
     });
-    const unsubAsignaciones = AdminService.subscribeToAsignacionesHoy(data => {
-      setAsignacionesHoy(data.length);
-    });
+    const unsubAsignaciones = AdminService.subscribeToAsignacionesPorFecha(
+      AdminService.getTodayDateString(),
+      data => {
+        setAsignacionesHoy(data.length);
+      },
+    );
     return () => {
       unsubChoferes();
       unsubBuses();

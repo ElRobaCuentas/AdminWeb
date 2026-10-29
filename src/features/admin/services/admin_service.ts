@@ -9,7 +9,9 @@ import {
 import {
   firebaseConfig, firebaseDatabase,
 } from '../../../shared/config/firebase';
+import { getLimaDateString, isDateOnOrAfter, isValidDateString } from '../../../shared/utils/date';
 import { isValidDni, normalizeDni } from '../../../shared/utils/dni';
+import { sortTurnos, validateTurnos, type Turno } from '../utils/turno';
 
 export interface Chofer {
   dni: string;
@@ -34,6 +36,7 @@ export interface Asignacion {
   busId: string;
   fecha: string;
   activo: boolean;
+  turnos?: Turno[];
   horaInicio?: number;
   horaFin?: number;
   createdAt?: number;
@@ -228,15 +231,14 @@ export const AdminService = {
   // GESTIÓN DE ASIGNACIONES
   // ============================
 
-  // 1. Obtener fecha de hoy en formato local (YYYY-MM-DD)
-  getTodayDateString: () => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  },
+  // 1. Obtener fecha de hoy en America/Lima (YYYY-MM-DD)
+  getTodayDateString: () => getLimaDateString(),
 
-  // 2. Escuchar asignaciones de HOY en tiempo real
-  subscribeToAsignacionesHoy: (onUpdate: (asignaciones: Asignacion[]) => void) => {
-    const today = AdminService.getTodayDateString();
+  // 2. Escuchar asignaciones de una fecha en tiempo real
+  subscribeToAsignacionesPorFecha: (
+    fecha: string,
+    onUpdate: (asignaciones: Asignacion[]) => void,
+  ) => {
     const dbRef = ref(firebaseDatabase, ASIGNACIONES_PATH);
 
     const unsubscribe = onValue(
@@ -251,7 +253,7 @@ export const AdminService = {
         const parsed: Asignacion[] = [];
         Object.keys(data).forEach(key => {
           const item = data[key];
-          if (item.fecha === today && item.activo === true) {
+          if (item.fecha === fecha && item.activo === true) {
             parsed.push({ id: key, ...item });
           }
         });
@@ -269,19 +271,38 @@ export const AdminService = {
   createAsignacion: async (
     choferId: string,
     busId: string,
-    horaInicio?: number,
-    horaFin?: number,
+    fecha: string,
+    turnos: Turno[],
   ) => {
+    const fechaNormalizada = fecha.trim();
+    if (!isValidDateString(fechaNormalizada)) {
+      throw new Error('La fecha de la asignación no es válida.');
+    }
+
     const today = AdminService.getTodayDateString();
+    if (!isDateOnOrAfter(fechaNormalizada, today)) {
+      throw new Error('No se pueden crear asignaciones para fechas anteriores a hoy.');
+    }
+
+    const errorTurnos = validateTurnos(turnos);
+    if (errorTurnos) throw new Error(errorTurnos);
+
+    const turnosOrdenados = sortTurnos(turnos);
+    const primerTurno = turnosOrdenados[0];
+
     const dbRef = ref(firebaseDatabase, ASIGNACIONES_PATH);
 
     const snapshot = await get(dbRef);
     if (snapshot.exists()) {
       const data = snapshot.val() as Record<string, Asignacion>;
       const yaAsignadoChofer = Object.values(data).some(
-        a => a.choferId === choferId && a.fecha === today && a.activo === true,
+        a => a.choferId === choferId
+          && a.fecha === fechaNormalizada
+          && a.activo === true,
       );
-      if (yaAsignadoChofer) throw new Error('El conductor ya tiene un bus asignado hoy.');
+      if (yaAsignadoChofer) {
+        throw new Error('El conductor ya tiene un bus asignado para esa fecha.');
+      }
     }
 
     const adminUid = getAuth().currentUser?.uid;
@@ -291,10 +312,11 @@ export const AdminService = {
     await set(newRef, {
       choferId,
       busId,
-      fecha: today,
+      fecha: fechaNormalizada,
       activo: true,
-      horaInicio,
-      horaFin,
+      turnos: turnosOrdenados,
+      horaInicio: primerTurno.inicio,
+      horaFin: primerTurno.fin,
       createdAt: Date.now(),
       createdBy: adminUid,
     });
@@ -314,18 +336,45 @@ export const AdminService = {
     }
   },
 
+  // 4.1 Actualizar turnos de una asignación existente
+  updateTurnos: async (asignacionId: string, turnos: Turno[]) => {
+    const errorTurnos = validateTurnos(turnos);
+    if (errorTurnos) throw new Error(errorTurnos);
+
+    const turnosOrdenados = sortTurnos(turnos);
+    const primerTurno = turnosOrdenados[0];
+
+    const asignacionRef = ref(firebaseDatabase, `${ASIGNACIONES_PATH}/${asignacionId}`);
+    const snapshot = await get(asignacionRef);
+    if (!snapshot.exists()) throw new Error('La asignación ya no existe.');
+
+    const asignacion = snapshot.val() as { activo?: boolean };
+    if (asignacion.activo !== true) {
+      throw new Error('La asignación ya no está activa.');
+    }
+
+    await update(asignacionRef, {
+      turnos: turnosOrdenados,
+      horaInicio: primerTurno.inicio,
+      horaFin: primerTurno.fin,
+    });
+    return true;
+  },
+
   // ============================
   // EDICIÓN Y ELIMINACIÓN
   // ============================
 
-  // 5. Verificar si un bus tiene asignación activa HOY
-  hasActiveBusAssignment: async (placa: string): Promise<boolean> => {
+  // 5. Verificar si un bus tiene asignación activa de hoy o futura
+  hasActiveOrFutureBusAssignment: async (placa: string): Promise<boolean> => {
     const today = AdminService.getTodayDateString();
     const snapshot = await get(ref(firebaseDatabase, ASIGNACIONES_PATH));
     if (!snapshot.exists()) return false;
     const data = snapshot.val() as Record<string, Asignacion>;
     return Object.values(data).some(
-      (a: Asignacion) => a.busId === placa && a.fecha === today && a.activo === true,
+      (a: Asignacion) => a.busId === placa
+        && a.activo === true
+        && isDateOnOrAfter(a.fecha, today),
     );
   },
 

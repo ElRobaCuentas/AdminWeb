@@ -1,6 +1,6 @@
 # AdminWeb — Panel de Administración Web
 
-Panel web para la gestión de conductores, buses y asignaciones diarias del sistema **El Burrito**. Permitido solo para usuarios cuyo UID existe en `/administradores/` en Firebase RTDB.
+Panel web para la gestión de conductores, buses y asignaciones por fecha del sistema **El Burrito**. Permitido solo para usuarios cuyo UID existe en `/administradores/` en Firebase RTDB.
 
 ## Stack
 
@@ -30,13 +30,16 @@ src/
 │   │   ├── AdminPanelScreen.tsx     ← Dashboard: métricas de hoy + accesos a módulos
 │   │   ├── ChoferesScreen.tsx       ← Gestión de conductores (crear, editar, activar/desactivar)
 │   │   ├── BusesScreen.tsx          ← Gestión de buses (crear, activar/desactivar, eliminar)
-│   │   ├── AsignacionesScreen.tsx   ← Asignaciones diarias conductor ↔ bus
+│   │   ├── AsignacionesScreen.tsx   ← Asignaciones por fecha conductor ↔ bus (multi-turno)
 │   │   └── AdminsScreen.tsx         ← Gestión de administradores
+│   ├── components/
+│   │   └── TurnosEditor.tsx         ← Editor reutilizable de turnos
 │   ├── services/
 │   │   ├── admin_service.ts         ← Toda la lógica CRUD (Firebase Auth + RTDB)
 │   │   └── admin_check.ts           ← Verificación de rol admin en /administradores/{uid}
 │   └── utils/
-│       └── turno.ts                 ← Parseo/format de horarios de turno
+│       ├── turno.ts                 ← Modelo/validación/format de turnos
+│       └── turnoDraft.ts            ← Estado de edición de turnos
 └── shared/
     ├── config/
     │   ├── env.ts                   ← Validación de variables VITE_FIREBASE_*
@@ -48,6 +51,7 @@ src/
     └── utils/
         ├── dni.ts                   ← Normalización y validación de DNI (8 dígitos)
         ├── format.ts                ← Formateo de fechas y nombres de admin
+        ├── date.ts                  ← Fechas de calendario America/Lima
         └── timeout.ts               ← Helper con timeout para reads de RTDB
 ```
 
@@ -85,8 +89,16 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 | **Panel de Control** | `/` | Dashboard con métricas de hoy (conductores activos, buses activos, asignaciones) y accesos a los 4 módulos |
 | **Choferes** | `/choferes` | Crear, listar, editar y activar/desactivar conductores. Desactivar conserva su cuenta y su historial (no se elimina). Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`) y el nodo en `/choferes/{dni}` |
 | **Buses** | `/buses` | Crear, listar, activar/desactivar y eliminar buses. Al crear, se inicializa `/ubicacion_buses/{placa}` con `isActive: false` |
-| **Asignaciones** | `/asignaciones` | Vincular un conductor con un bus para el día actual. Valida que el conductor no tenga otra asignación activa hoy (el bus no se valida en el flujo actual). Cancelar desactiva sin eliminar |
+| **Asignaciones** | `/asignaciones` | Vincular un conductor con un bus para hoy o fechas futuras. Cada asignación puede tener uno o varios turnos informativos. Valida exclusividad conductor + fecha; el bus no se valida al crear. Cancelar desactiva sin eliminar |
 | **Administradores** | `/admins` | Crear, editar y eliminar cuentas de administrador. Crear genera cuenta Firebase Auth (`{dni}@admin.com`) y nodo en `/administradores/{uid}` |
+
+### Asignaciones y turnos
+
+- Una asignación activa por conductor + fecha; un solo bus.
+- `turnos` es un array de intervalos `{ inicio, fin }` en minutos; mínimo uno, mismo día, sin solapamientos y ordenado.
+- `horaInicio`/`horaFin` se mantienen como espejo del primer turno para compatibilidad.
+- Los turnos no inician ni detienen el tracking del conductor; el conductor sigue usando el bus asignado.
+- El bus no se valida al crear; la protección de buses se aplica al intentar eliminar uno con asignación activa o futura.
 
 ## Nodos Firebase involucrados
 
@@ -96,7 +108,7 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 | `/choferes_uids/{uid}` | — | Admin | Vínculo uid → dni para RTDB auth en ubicacion_buses |
 | `/buses/{placa}` | Admin | Admin | Datos del bus (activo, creadoEn, creadoPor) |
 | `/ubicacion_buses/{placa}` | — | Admin (solo init) | Se inicializa al crear bus; tracking lo escribe la DriverApp |
-| `/asignaciones/{id}` | Admin | Admin | Asignación diaria (choferId, busId, fecha, activo, horaInicio, horaFin, createdAt, createdBy) |
+| `/asignaciones/{id}` | Admin | Admin | Asignación por fecha (choferId, busId, fecha, activo, turnos, horaInicio, horaFin, createdAt, createdBy) |
 | `/administradores/{uid}` | Admin | Admin existente | Autorización del admin. Los administradores se crean desde el panel; el primero se crea en Firebase Console |
 
 ## Variables de entorno

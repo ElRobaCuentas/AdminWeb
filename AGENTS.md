@@ -127,12 +127,14 @@ Administradores: `{dni}@admin.com`.
 Están hardcodeadas en `admin_service.ts` y `LoginScreen.tsx` y deben
 coincidir con DriverApp (ADR-025). Cambiarlas rompe el login del conductor.
 
-### 6.5 No asumir validación de bus duplicado
+### 6.5 Validación de asignaciones
 
-`createAsignacion` **solo valida que el conductor no tenga otra asignación
-activa hoy**. `hasActiveBusAssignment` existe en el servicio pero no está
-conectado al flujo de creación. No afirmes ni documentes una validación de
-bus que el código no ejecuta.
+`createAsignacion` valida que el conductor no tenga otra asignación activa
+**para la misma fecha** (hoy o futura) y que los turnos sean válidos. No
+valida que el bus esté libre: varios conductores pueden usar el mismo bus.
+`hasActiveOrFutureBusAssignment` se usa en `BusesScreen` para bloquear la
+eliminación de un bus con asignación activa o futura; no está conectado al
+alta. No afirmes ni documentes una validación de bus que el código no ejecuta.
 
 ### 6.6 Cancelar asignación no elimina
 
@@ -186,6 +188,22 @@ Los inputs de DNI solo aceptan dígitos (`sanitizeDniInput`) y usan
 
 `shared/config/env.ts` exige las cinco `VITE_FIREBASE_*` antes de inicializar.
 Si agregás una variable de configuración nueva, sumala ahí y al `.env.example`.
+
+### 6.14 Turnos de una asignación
+
+Una asignación representa **un solo bus** para un conductor y una fecha.
+Los turnos son datos administrativos dentro del mismo `asignacionId`:
+`turnos: [{ inicio, fin }]`, en minutos desde medianoche.
+
+- `turnos` es la fuente de verdad; `horaInicio`/`horaFin` se conservan como
+  espejo del primer turno por compatibilidad con registros viejos.
+- Mínimo un turno, `inicio < fin`, mismo día (sin cruzar medianoche), sin
+  solapamientos y ordenados. Consecutivos y separados están permitidos.
+- Editar turnos usa `updateTurnos()` sobre el mismo nodo; no crees otra
+  asignación.
+- La unicidad sigue siendo una asignación activa por conductor + fecha.
+- No leas `turnos` desde DriverApp ni cambies el tracking: los turnos no
+  inician ni detienen el recorrido. Cambiar de bus requeriría otra fase.
 
 ---
 

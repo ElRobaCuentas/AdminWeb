@@ -78,9 +78,9 @@ export const BusesScreen = () => {
     const bus = deleteTarget;
     setBusy(true);
     try {
-      const tieneAsignacion = await AdminService.hasActiveBusAssignment(bus.placa);
+      const tieneAsignacion = await AdminService.hasActiveOrFutureBusAssignment(bus.placa);
       if (tieneAsignacion) {
-        toast.error('Este bus tiene una asignación activa. Cancela la asignación primero.');
+        toast.error('Este bus tiene una asignación activa o programada. Cancélala primero.');
         return;
       }
       await AdminService.deleteBus(bus.placa);

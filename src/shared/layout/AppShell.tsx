@@ -12,7 +12,7 @@ import { SessionContext } from './SessionContext';
 const NAV_ITEMS: { to: string; label: string; icon?: IconName }[] = [
   { to: '/', label: 'Asignaciones', icon: 'assignment' },
   { to: '/choferes', label: 'Conductores', icon: 'drivers' },
-  { to: '/buses', label: 'Buses' },
+  { to: '/buses', label: 'Buses', icon: 'bus' },
   { to: '/admins', label: 'Administradores', icon: 'admins' },
 ];
 

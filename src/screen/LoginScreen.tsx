@@ -4,7 +4,6 @@ import { firebaseAuth } from '../shared/config/firebase';
 import { isValidDni, normalizeDni, sanitizeDniInput } from '../shared/utils/dni';
 import { Button } from '../shared/ui/Button';
 import { Field } from '../shared/ui/Field';
-import { Icon } from '../shared/ui/Icon';
 
 export const LoginScreen = () => {
   const [dni, setDni] = useState('');
@@ -54,44 +53,30 @@ export const LoginScreen = () => {
   return (
     <div className="login">
       <div className="login-brand">
-        <div className="login-brand-top">
-          <span className="brand-mark">
-            <Icon name="bus" size={22} />
-          </span>
-          El Burrito
-        </div>
+        <h1 className="login-brand-top">El Burrito</h1>
 
         <div className="login-brand-hero">
-          <h1>Panel de administración</h1>
-          <p>
-            Gestiona conductores, buses y asignaciones diarias del sistema de
-            transporte en tiempo real.
-          </p>
-          <ul className="login-brand-list">
-            <li>
-              <Icon name="drivers" size={18} /> Registro y control de conductores
-            </li>
-            <li>
-              <Icon name="bus" size={18} /> Administración de los buses
-            </li>
-            <li>
-              <Icon name="assignment" size={18} /> Asignaciones del turno diario
-            </li>
-          </ul>
+          <p className="login-brand-description">Buses, choferes y jornadas diarias.</p>
+          <div className="login-route">
+            <div className="login-route-stop">
+              Conductores
+            </div>
+            <div className="login-route-stop">
+              Buses
+            </div>
+            <div className="login-route-stop">
+              Asignaciones
+            </div>
+            <div className="login-route-stop">
+              Administradores
+            </div>
+          </div>
         </div>
 
-        <div className="login-brand-foot">EVENTUAL</div>
       </div>
 
       <div className="login-panel">
         <div className="login-card">
-          <div className="login-mobile-brand">
-            <span className="brand-mark">
-              <Icon name="bus" size={20} />
-            </span>
-            El Burrito
-          </div>
-
           <h2>Acceso para administradores</h2>
           <p className="login-sub">Ingresa con tu DNI y contraseña.</p>
 
@@ -101,6 +86,7 @@ export const LoginScreen = () => {
               label="DNI"
               inputMode="numeric"
               maxLength={8}
+              hint="8 dígitos, sin puntos."
               value={dni}
               onChange={e => setDni(sanitizeDniInput(e.target.value))}
               autoComplete="username"
@@ -117,13 +103,7 @@ export const LoginScreen = () => {
 
             {error ? <p className="field-error">{error}</p> : null}
 
-            <Button
-              block
-              onClick={handleLogin}
-              disabled={loading}
-              className="mt-4"
-              icon={loading ? undefined : <Icon name="logout" size={16} />}
-            >
+            <Button block onClick={handleLogin} disabled={loading} className="mt-4">
               {loading ? 'Entrando…' : 'Entrar'}
             </Button>
           </div>

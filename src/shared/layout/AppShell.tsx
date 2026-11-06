@@ -9,20 +9,19 @@ import { ConfirmDialog } from '../ui/Modal';
 import { initialsOf } from '../utils/format';
 import { SessionContext } from './SessionContext';
 
-const NAV_ITEMS: { to: string; label: string; icon: IconName }[] = [
-  { to: '/', label: 'Panel de Control', icon: 'dashboard' },
+const NAV_ITEMS: { to: string; label: string; icon?: IconName }[] = [
+  { to: '/', label: 'Asignaciones', icon: 'assignment' },
   { to: '/choferes', label: 'Conductores', icon: 'drivers' },
-  { to: '/buses', label: 'Buses', icon: 'bus' },
-  { to: '/asignaciones', label: 'Asignaciones', icon: 'assignment' },
+  { to: '/buses', label: 'Buses' },
   { to: '/admins', label: 'Administradores', icon: 'admins' },
 ];
 
-const TITLES: Record<string, { title: string; subtitle: string }> = {
-  '/': { title: 'Panel de Control', subtitle: 'Resumen de la operación de hoy' },
-  '/choferes': { title: 'Conductores', subtitle: 'Registrar, activar y desactivar conductores' },
-  '/buses': { title: 'Buses', subtitle: 'Registrar placas y estado de la flota' },
-  '/asignaciones': { title: 'Asignaciones diarias', subtitle: 'Vincular conductores con vehículos para el turno de hoy' },
-  '/admins': { title: 'Administradores', subtitle: 'Registrar, editar y eliminar cuentas de administrador' },
+const TITLES: Record<string, string> = {
+  '/': 'Asignaciones',
+  '/choferes': 'Conductores',
+  '/buses': 'Buses',
+  '/asignaciones': 'Asignaciones',
+  '/admins': 'Administradores',
 };
 
 export const AppShell = ({ children }: { children: ReactNode }) => {
@@ -54,11 +53,18 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
     setDrawerOpen(false);
   }, [location.pathname]);
 
-  const meta = TITLES[location.pathname] ?? TITLES['/'];
+  const pageTitle = TITLES[location.pathname] ?? TITLES['/'];
   const fullName = admin
     ? `${admin.nombres ?? ''} ${admin.apellidos ?? ''}`.trim()
     : '';
   const initials = initialsOf(admin?.nombres ?? '', admin?.apellidos);
+  const todayLabel = new Intl.DateTimeFormat('es-PE', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'America/Lima',
+  }).format(new Date());
+  const dateLabel = todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1);
 
   const handleLogout = async () => {
     setConfirmLogout(false);
@@ -70,17 +76,13 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
     <div className="app-shell">
       <aside className={['sidebar', drawerOpen ? 'is-open' : ''].filter(Boolean).join(' ')}>
         <div className="sidebar-brand">
-          <span className="brand-mark">
-            <Icon name="bus" size={20} />
-          </span>
           <div>
             El Burrito
-            <small>Panel Admin</small>
+            <small>ADMINISTRACION</small>
           </div>
         </div>
 
         <nav className="sidebar-nav">
-          <span className="nav-section-label">Operación</span>
           {NAV_ITEMS.map(item => (
             <NavLink
               key={item.to}
@@ -91,7 +93,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
               }
             >
               <span className="nav-icon">
-                <Icon name={item.icon} size={19} />
+                {item.icon ? <Icon name={item.icon} size={19} /> : null}
               </span>
               {item.label}
             </NavLink>
@@ -110,7 +112,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
             icon={<Icon name="logout" size={16} />}
             onClick={() => setConfirmLogout(true)}
           >
-            Cerrar Sesión
+            Cerrar sesión
           </Button>
         </div>
       </aside>
@@ -131,16 +133,15 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           >
             <Icon name="menu" />
           </button>
-          <div className="topbar-titles">
-            <div className="topbar-title">{meta.title}</div>
-            <div className="topbar-subtitle">{meta.subtitle}</div>
-          </div>
+          <div className="topbar-titles" />
+          <div className="topbar-date">{dateLabel}</div>
           <div className="topbar-user">
             <span className="avatar">{initials}</span>
           </div>
         </header>
 
         <main className="app-content">
+          <h1 className="page-heading">{pageTitle}</h1>
           <SessionContext.Provider value={admin}>{children}</SessionContext.Provider>
         </main>
       </div>

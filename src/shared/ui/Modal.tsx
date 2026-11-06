@@ -8,9 +8,10 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  className?: string;
 }
 
-export const Modal = ({ open, title, onClose, children, footer }: ModalProps) => {
+export const Modal = ({ open, title, onClose, children, footer, className = '' }: ModalProps) => {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,7 +43,7 @@ export const Modal = ({ open, title, onClose, children, footer }: ModalProps) =>
       }}
     >
       <div
-        className="modal"
+        className={['modal', className].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
         aria-label={title}

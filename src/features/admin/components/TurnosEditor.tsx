@@ -33,15 +33,15 @@ export const TurnosEditor = ({
       {value.map((turno, index) => (
         <div className="turno-row" key={turno.id}>
           <div className="turno-row-header">
-            <span className="turno-num">Turno {index + 1}</span>
+            <span className="turno-num">Horario {index + 1}</span>
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => removeTurno(turno.id)}
               disabled={disabled || value.length <= 1}
-              title={value.length <= 1 ? 'La asignación debe tener al menos un turno' : undefined}
-              aria-label={`Quitar turno ${index + 1}`}
+              title={value.length <= 1 ? 'La asignación debe tener al menos un horario' : undefined}
+              aria-label={`Quitar horario ${index + 1}`}
               icon={<Icon name="trash" size={15} />}
             >
               Quitar
@@ -75,11 +75,10 @@ export const TurnosEditor = ({
         disabled={disabled}
         icon={<Icon name="plus" size={15} />}
       >
-        Añadir turno
+        Añadir horario
       </Button>
       <p className="field-hint">
-        Puedes agregar turnos separados o consecutivos; no deben superponerse.
-        Son informativos: no inician ni detienen el recorrido.
+        Puedes agregar bloques separados o consecutivos; no deben superponerse.
       </p>
     </div>
   );

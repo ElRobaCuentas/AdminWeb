@@ -104,7 +104,7 @@ export const ChoferesScreen = () => {
   };
 
   return (
-    <div className="stack">
+    <div className="workbench">
       <Card>
         <CardHeader title="Registrar nuevo conductor" description="Su contraseña inicial será su DNI." />
         <div className="card-body">
@@ -140,8 +140,8 @@ export const ChoferesScreen = () => {
 
       <section>
         <h2 className="section-title">
-          Conductores registrados{' '}
-          {choferes.length > 0 ? <span className="badge badge-info">{choferes.length}</span> : null}
+          Conductores{' '}
+          {choferes.length > 0 ? <span className="badge-count">{choferes.length}</span> : null}
         </h2>
 
         {loading ? (
@@ -149,11 +149,11 @@ export const ChoferesScreen = () => {
         ) : choferes.length === 0 ? (
           <EmptyState
             icon={<Icon name="drivers" size={32} />}
-            title="No hay conductores registrados"
-            hint="Registra el primero con el formulario de arriba."
+            title="Sin conductores"
+            hint="Registra el primero arriba."
           />
         ) : (
-          <ul className="list">
+          <ul className="registry">
             {choferes.map(item => (
               <li key={item.dni} className="row-card">
                 <div className="row-info">

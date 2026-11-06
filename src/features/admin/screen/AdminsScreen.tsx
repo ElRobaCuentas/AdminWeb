@@ -111,7 +111,7 @@ export const AdminsScreen = () => {
   const currentUid = getAuth().currentUser?.uid;
 
   return (
-    <div className="stack">
+    <div className="workbench">
       <Card>
         <CardHeader
           title="Registrar nuevo administrador"
@@ -154,8 +154,8 @@ export const AdminsScreen = () => {
 
       <section>
         <h2 className="section-title">
-          Administradores registrados{' '}
-          {admins.length > 0 ? <span className="badge badge-info">{admins.length}</span> : null}
+          Cuentas{' '}
+          {admins.length > 0 ? <span className="badge-count">{admins.length}</span> : null}
         </h2>
 
         {loading ? (
@@ -163,10 +163,11 @@ export const AdminsScreen = () => {
         ) : admins.length === 0 ? (
           <EmptyState
             icon={<Icon name="admins" size={32} />}
-            title="No hay administradores registrados"
+            title="Sin administradores"
+            hint="Crea la primera cuenta arriba."
           />
         ) : (
-          <ul className="list">
+          <ul className="registry">
             {admins.map(item => (
               <li key={item.uid} className="row-card">
                 <div className="row-info">

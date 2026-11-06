@@ -50,7 +50,7 @@ export const BusesScreen = () => {
     setCreating(true);
     try {
       await AdminService.createBus({ placa: placa.toUpperCase().trim() });
-      toast.success('Bus registrado correctamente en la flota.');
+      toast.success('Bus registrado correctamente.');
       setPlaca('');
     } catch (error) {
       toast.error((error as Error).message);
@@ -94,7 +94,7 @@ export const BusesScreen = () => {
   };
 
   return (
-    <div className="stack">
+    <div className="workbench">
       <Card>
         <CardHeader title="Registrar nuevo bus" description="La placa se guardará en mayúsculas." />
         <div className="card-body">
@@ -114,24 +114,25 @@ export const BusesScreen = () => {
 
       <section>
         <h2 className="section-title">
-          Flota registrada{' '}
-          {buses.length > 0 ? <span className="badge badge-info">{buses.length}</span> : null}
+          Buses{' '}
+          {buses.length > 0 ? <span className="badge-count">{buses.length}</span> : null}
         </h2>
 
         {loading ? (
           <p className="text-muted">Cargando buses…</p>
         ) : buses.length === 0 ? (
           <EmptyState
-            icon={<Icon name="bus" size={32} />}
-            title="No hay buses registrados"
-            hint="Registra el primero con el formulario de arriba."
+            title="Sin buses"
+            hint="Registra el primero arriba."
           />
         ) : (
-          <ul className="list">
+          <ul className="registry">
             {buses.map(item => (
               <li key={item.placa} className="row-card">
                 <div className="row-info">
-                  <div className="row-title">{item.placa}</div>
+                  <div className="row-title">
+                    <span className="plate">{item.placa}</span>
+                  </div>
                   {item.creadoEn ? (
                     <div className="row-sub">
                       Creado el {formatDate(item.creadoEn)}

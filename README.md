@@ -27,10 +27,9 @@ src/
 │   └── AdminNavigator.tsx           ← Rutas del panel (envueltas por el AppShell)
 ├── features/admin/
 │   ├── screen/
-│   │   ├── AdminPanelScreen.tsx     ← Dashboard: métricas de hoy + accesos a módulos
 │   │   ├── ChoferesScreen.tsx       ← Gestión de conductores (crear, editar, activar/desactivar)
 │   │   ├── BusesScreen.tsx          ← Gestión de buses (crear, activar/desactivar, eliminar)
-│   │   ├── AsignacionesScreen.tsx   ← Asignaciones por fecha conductor ↔ bus (multi-turno)
+│   │   ├── AsignacionesScreen.tsx   ← Formulario y listado por fecha, editar horarios
 │   │   └── AdminsScreen.tsx         ← Gestión de administradores
 │   ├── components/
 │   │   └── TurnosEditor.tsx         ← Editor reutilizable de turnos
@@ -66,10 +65,10 @@ La interfaz usa un **sistema de diseño propio basado en CSS con tokens** (sin d
 | `layout.css` | App shell: sidebar, topbar, contenido y drawer móvil |
 | `components.css` | Primitivas reutilizables (botones, campos, cards, badges, etc.) |
 | `overlays.css` | Modal, diálogo de confirmación y toasts |
-| `screens.css` | Login, pantallas de auth y detalles de vistas |
+| `screens.css` | Login, pantallas de auth y asignaciones |
 
-- **Paleta "Operations Blue", solo tema claro:** primario `#2563EB`, complementario cian `#06B6D4`, sidebar oscuro `#0F172A`, fondo `#F8FAFC`.
-- **App shell** (`shared/layout/AppShell.tsx`): sidebar + topbar en escritorio; drawer en móvil. Muestra la identidad del admin en sesión y expone los datos vía `SessionContext`/`useSession`. Las rutas (`AdminNavigator`) se renderizan dentro del shell.
+- **Tema claro:** cian `#00AEEF`, gris `#F5F5F5`, fondo blanco y texto `#222222`. Tipografía **Barlow** y **Barlow Condensed**, cargadas desde Google Fonts en `index.html`.
+- **App shell** (`shared/layout/AppShell.tsx`): sidebar tipo línea de ruta + topbar en escritorio; drawer en móvil. Muestra la identidad del admin en sesión y expone los datos vía `SessionContext`/`useSession`. Las rutas (`AdminNavigator`) se renderizan dentro del shell.
 - **Primitivas** (`shared/ui/`): `Button`, `Field`, `Card`/`CardHeader`, `StatCard`, `StatusBadge`/`Badge`, `ToggleSwitch`, `Modal`/`ConfirmDialog`, `Toast` (+ `useToast` en `toastContext.ts`), `EmptyState`/`Spinner`/`LoadingScreen`, `PageHeader` e `Icon` (set de iconos SVG propio).
 - **Confirmaciones y avisos:** no se usa `window.confirm`; las acciones se confirman con `ConfirmDialog` y los resultados se comunican con toasts.
 
@@ -86,10 +85,9 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 
 | Módulo | Ruta | Descripción |
 |--------|------|-------------|
-| **Panel de Control** | `/` | Dashboard con métricas de hoy (conductores activos, buses activos, asignaciones) y accesos a los 4 módulos |
+| **Asignaciones** | `/` (`/asignaciones` redirige) | Formulario de creación y listado por fecha con horarios, placa, conductor y fecha de creación cuando está disponible. Permite editar horarios o cancelar asignaciones |
 | **Choferes** | `/choferes` | Crear, listar, editar y activar/desactivar conductores. Desactivar conserva su cuenta y su historial (no se elimina). Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`) y el nodo en `/choferes/{dni}` |
 | **Buses** | `/buses` | Crear, listar, activar/desactivar y eliminar buses. Al crear, se inicializa `/ubicacion_buses/{placa}` con `isActive: false` |
-| **Asignaciones** | `/asignaciones` | Vincular un conductor con un bus para hoy o fechas futuras. Cada asignación puede tener uno o varios turnos informativos. Valida exclusividad conductor + fecha; el bus no se valida al crear. Cancelar desactiva sin eliminar |
 | **Administradores** | `/admins` | Crear, editar y eliminar cuentas de administrador. Crear genera cuenta Firebase Auth (`{dni}@admin.com`) y nodo en `/administradores/{uid}` |
 
 ### Asignaciones y turnos

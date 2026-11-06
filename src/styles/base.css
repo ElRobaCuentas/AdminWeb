@@ -21,7 +21,7 @@ body {
   font-size: var(--fs-base);
   line-height: 1.5;
   color: var(--color-text);
-  background-color: var(--color-bg);
+  background-color: var(--color-paper);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -30,12 +30,15 @@ h1,
 h2,
 h3,
 h4 {
-  line-height: 1.25;
+  font-family: var(--font-display);
+  font-weight: var(--fw-semibold);
+  line-height: 1.15;
+  letter-spacing: 0.1px;
   color: var(--color-text);
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-brand-dark);
   text-decoration: none;
 }
 
@@ -55,10 +58,21 @@ textarea {
   font-family: inherit;
 }
 
+::selection {
+  background: var(--color-signal);
+  color: var(--color-ink);
+}
+
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-brand-deep);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+/* Números de tablero: siempre alineados en columna */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 /* Scrollbar discreto */
@@ -68,9 +82,9 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border-strong);
+  background: var(--color-line-strong);
   border-radius: var(--radius-pill);
-  border: 2px solid var(--color-bg);
+  border: 2px solid var(--color-paper);
 }
 
 /* Estados globales de carga / pantalla completa (login y auth gate) */
@@ -92,6 +106,8 @@ textarea {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

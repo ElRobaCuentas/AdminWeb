@@ -63,7 +63,7 @@ src/main.tsx → App.tsx (auth gate)
 |---------|-----|
 | `src/App.tsx` | **Crítico**: auth gate (`onAuthStateChanged` + verificación de rol) |
 | `src/screen/LoginScreen.tsx` | Login DNI + contraseña (`{dni}@admin.com`) |
-| `src/navigation/AdminNavigator.tsx` | Rutas: `/`, `/choferes`, `/buses`, `/asignaciones`, `/admins`, `*`→`/` (dentro del `AppShell`) |
+| `src/navigation/AdminNavigator.tsx` | Rutas: `/` (Asignaciones), `/choferes`, `/buses`, `/admins`; `/asignaciones` redirige a `/`; `*`→`/` (dentro del `AppShell`) |
 | `src/shared/layout/AppShell.tsx` | Sidebar + topbar + drawer móvil; provee la sesión (`SessionContext`) |
 | `src/shared/ui/*` | Primitivas de UI (`Button`, `Field`, `Card`, `Modal`/`ConfirmDialog`, `Toast`, `Icon`, etc.) |
 | `src/styles/*` + `src/index.css` | Sistema de diseño por tokens (colores, layout, componentes) |
@@ -217,7 +217,7 @@ Los turnos son datos administrativos dentro del mismo `asignacionId`:
 | Componentes | PascalCase |
 | Comentarios | Español |
 | Documentación | Español |
-| Estilos | CSS propio con tokens en `src/styles/` (importado por `index.css`); paleta "Operations Blue" |
+| Estilos | CSS propio con tokens en `src/styles/` (importado por `index.css`); tema claro con cian `#00AEEF`, gris `#F5F5F5`, blanco y texto `#222222` |
 | Lint | Oxlint (`npm run lint`) |
 
 ---

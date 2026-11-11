@@ -231,7 +231,7 @@ Los turnos son datos administrativos dentro del mismo `asignacionId`:
 | Decisión arquitectónica | `docs/DECISIONS.md` |
 | Bug en diagnóstico | `docs/TROUBLESHOOTING.md` |
 | Bug corregido | `docs/BUGS_RESUELTOS/` |
-| Limitación | `docs/PROJECT_CONTEXT.md` |
+| Limitación | `docs/ARCHITECTURE.md` §9 / `docs/TROUBLESHOOTING.md` |
 | Variable de entorno (`VITE_*`) | `README.md` (Variables de entorno) + `.env.example` |
 | Regla IA | `AGENTS.md` |
 | Setup / stack | `README.md` |
@@ -256,8 +256,7 @@ Los turnos son datos administrativos dentro del mismo `asignacionId`:
 
 | Si necesitas... | Lee... |
 |----------------|--------|
-| Propósito del sistema | `docs/PROJECT_CONTEXT.md` |
-| Flujo y arquitectura | `docs/ARCHITECTURE.md` |
+| Propósito, flujo y arquitectura | `docs/ARCHITECTURE.md` |
 | Estructura RTDB | `docs/FIREBASE_SCHEMA.md` |
 | Próximas fases | `docs/ROADMAP.md` |
 | Bugs conocidos | `docs/TROUBLESHOOTING.md` |

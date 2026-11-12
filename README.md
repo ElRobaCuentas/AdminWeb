@@ -74,12 +74,14 @@ La interfaz usa un **sistema de diseño propio basado en CSS con tokens** (sin d
 
 ## Autenticación y autorización
 
-1. El usuario ingresa su DNI y contraseña. El correo interno es `{dni}@admin.com` (Firebase Auth).
-2. Al autenticarse, `App.tsx` pasa por un estado explícito mientras llama `existeAdministrador(uid)`, que lee `/administradores/{uid}`.
-3. Si el nodo existe → acceso al panel. Si `PERMISSION_DENIED` (la regla exige ser admin) → pantalla "No autorizado".
-4. Un fallo de red o el timeout de 10s (C4.AUTH) no se interpretan como denegación: muestran la pantalla recuperable "No se pudo verificar" con Reintentar.
+El acceso usa DNI y contraseña (`{dni}@admin.com`) y requiere que el UID
+exista en `/administradores/{uid}`. Un fallo de red o el timeout de 10 s
+muestra "No se pudo verificar" con opción de reintentar; no se interpreta
+como una denegación de permisos.
 
-Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conductores y estudiantes no pueden entrar.
+El primer administrador se crea manualmente en Firebase Console (cuenta
+Auth y nodo RTDB). Los siguientes se crean desde el panel. El flujo técnico
+completo se mantiene en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md).
 
 ## Módulos del panel
 
@@ -88,7 +90,7 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 | **Asignaciones** | `/` (`/asignaciones` redirige) | Formulario de creación y listado por fecha con horarios, placa, conductor y fecha de creación cuando está disponible. Permite editar horarios o cancelar asignaciones |
 | **Choferes** | `/choferes` | Crear, listar, editar y activar/desactivar conductores. Desactivar conserva su cuenta y su historial (no se elimina). Cada creación genera una cuenta Firebase Auth (`{dni}@conductor.com`) y el nodo en `/choferes/{dni}` |
 | **Buses** | `/buses` | Crear, listar, activar/desactivar y eliminar buses. Al crear, se inicializa `/ubicacion_buses/{placa}` con `isActive: false` |
-| **Administradores** | `/admins` | Crear, editar y eliminar cuentas de administrador. Crear genera cuenta Firebase Auth (`{dni}@admin.com`) y nodo en `/administradores/{uid}` |
+| **Administradores** | `/admins` | Crear, editar y retirar el acceso administrativo. Crear genera cuenta Firebase Auth (`{dni}@admin.com`) y nodo en `/administradores/{uid}`. Retirar acceso borra solo el nodo RTDB; la cuenta Auth se elimina manualmente en Firebase Console |
 
 ### Asignaciones y turnos
 
@@ -96,18 +98,14 @@ Solo los UIDs registrados en `/administradores/` pueden acceder al panel. Conduc
 - `turnos` es un array de intervalos `{ inicio, fin }` en minutos; mínimo uno, mismo día, sin solapamientos y ordenado.
 - `horaInicio`/`horaFin` se mantienen como espejo del primer turno para compatibilidad.
 - Los turnos no inician ni detienen el tracking del conductor; el conductor sigue usando el bus asignado.
-- El bus no se valida al crear; la protección de buses se aplica al intentar eliminar uno con asignación activa o futura.
+- Al crear no se comprueba que el bus esté libre; sí se bloquea su eliminación si tiene una asignación activa o futura.
 
-## Nodos Firebase involucrados
+Los contratos de nodos, campos y permisos se mantienen en el
+[esquema Firebase](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/FIREBASE_SCHEMA.md),
+sin duplicarlos en este README.
 
-| Nodo | Lectura | Escritura | Descripción |
-|------|---------|-----------|-------------|
-| `/choferes/{dni}` | Admin | Admin | Datos del conductor (nombre, apellidos, activo, uid, creadoEn, creadoPor) |
-| `/choferes_uids/{uid}` | — | Admin | Vínculo uid → dni para RTDB auth en ubicacion_buses |
-| `/buses/{placa}` | Admin | Admin | Datos del bus (activo, creadoEn, creadoPor) |
-| `/ubicacion_buses/{placa}` | — | Admin (solo init) | Se inicializa al crear bus; tracking lo escribe la DriverApp |
-| `/asignaciones/{id}` | Admin | Admin | Asignación por fecha (choferId, busId, fecha, activo, turnos, horaInicio, horaFin, createdAt, createdBy) |
-| `/administradores/{uid}` | Admin | Admin existente | Autorización del admin. Los administradores se crean desde el panel; el primero se crea en Firebase Console |
+Desactivar un conductor conserva su cuenta e historial: no cancela sus
+asignaciones ni detiene por sí solo el tracking de BurritoDriverApp.
 
 ## Variables de entorno
 
@@ -131,17 +129,18 @@ npm install
 npm run dev
 ```
 
-El dev server arranca en `http://localhost:5173`.
+El puerto predeterminado del dev server es `http://localhost:5173`; consultar
+la URL que imprima Vite si ese puerto está ocupado.
 
 ## Build y deploy
 
 ```bash
 npm run build          # genera dist/
 npm run preview        # preview local de la build
-firebase deploy        # deploy a Firebase Hosting (proyecto: burritounmsm)
+firebase deploy        # solo tras verificar el proyecto de destino en Firebase CLI
 ```
 
-La configuración de Firebase Hosting (`firebase.json`) sirve desde `dist/` con rewrites SPA y cache de assets.
+La configuración de Firebase Hosting (`firebase.json`) sirve desde `dist/` con rewrites SPA y cache de assets. Confirmar el proyecto seleccionado antes de desplegar; este README no certifica el estado publicado.
 
 ## Linting
 
@@ -153,12 +152,16 @@ npm run lint           # ejecuta Oxlint
 
 - **Plataforma:** web (cualquier navegador moderno)
 - **No es móvil:** este panel es exclusivamente web, no tiene versión móvil
-- **Firebase Hosting:** desplegado en `burritounmsm.web.app` (o el dominio configurado)
+- **Firebase Hosting:** el destino depende del proyecto seleccionado en Firebase CLI.
 
-## Notas para IA
+## Documentación relacionada
 
-- `admin_service.ts` usa una **app temporal por operación** (`initializeApp(..., 'reg_${Date.now()}')`) con `inMemoryPersistence` para crear cuentas Auth de conductores y otros admins sin cerrar la sesión del admin actual.
-- `admin_check.ts` tiene un timeout de 10s para el read de `/administradores/{uid}`. Esto es intencional (C4.AUTH): sin red, `get()` de RTDB nunca resuelve ni rechaza. Un `PERMISSION_DENIED` en esa ruta se interpreta como "no es administrador"; los fallos de red se propagan.
-- Los conductores se **desactivan**, no se eliminan: no existe `deleteChofer`. Desactivar solo cambia `activo`, conservando cuenta Auth, `uid` e historial.
-- El DNI se normaliza y valida con `shared/utils/dni.ts` (exactamente 8 dígitos) en pantallas y servicios.
-- Los correos de conductores son `{dni}@conductor.com` y los de admins son `{dni}@admin.com`. Estas convenciones están hardcodeadas en `admin_service.ts` y `LoginScreen.tsx`.
+La documentación compartida está en [BurritoDocs](https://github.com/ElRobaCuentas/BurritoDocs)
+(`C:\Movil\docs` en el workspace):
+
+- [Arquitectura](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md): flujos e implementación entre aplicaciones.
+- [Esquema Firebase](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/FIREBASE_SCHEMA.md): nodos, payloads y permisos.
+- [Decisiones](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/DECISIONS.md): criterios arquitectónicos.
+- [Diagnóstico](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/TROUBLESHOOTING.md): problemas conocidos y limitaciones.
+
+Las instrucciones específicas para asistentes se mantienen en [AGENTS.md](AGENTS.md).

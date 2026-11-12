@@ -1,0 +1,11 @@
+# Solo loopback y namespace demo. No habilita Firebase remoto.
+RTDB_ORIGIN=http://127.0.0.1:9000
+RTDB_NAMESPACE=demo-el-burrito-i03i04
+BUS_ID=PULSO-TEST
+# Token temporal de Firebase Auth Emulator; no usar owner ni credenciales administrativas.
+FIREBASE_ID_TOKEN=
+# Parámetros explícitos para la comprobación local, no política de producción.
+PUBLICATION_STALE_AFTER_MS=180000
+RECOVERY_CONFIRMATIONS_REQUIRED=2
+MAX_FUTURE_SKEW_MS=5000
+READ_TIMEOUT_MS=5000

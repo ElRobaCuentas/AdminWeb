@@ -218,3 +218,141 @@ describe('fronteras de seguridad e instalación aislada', () => {
     assert.equal(config.dev.ip, '127.0.0.1');
   });
 });
+
+describe('lectura operativa pública explícita, sin red real', () => {
+  const operative = {
+    ...target, mode: 'operative-public' as const,
+    origin: 'https://burritounmsm-default-rtdb.firebaseio.com/',
+    namespace: 'burritounmsm-default-rtdb',
+  };
+  const operativeEnv = {
+    ...env, RTDB_MODE: operative.mode, RTDB_ORIGIN: operative.origin, RTDB_NAMESPACE: operative.namespace,
+    FIREBASE_ID_TOKEN: 'PRIVATE UNUSED TOKEN',
+  };
+  const noAuthentication = { getIdToken: async () => { assert.fail('Public mode must not obtain a token'); } };
+
+  it('preserva el esquema exacto del diagnóstico local anterior', async () => {
+    const result = await readAndEvaluate(env, { auth, now: () => now, fetchImpl: jsonFetch(null) });
+    assert.deepEqual(Object.keys(result).sort(), [
+      'authentication', 'busId', 'continuity', 'evaluatedAt', 'evaluation', 'input', 'source',
+    ]);
+  });
+
+  it('comprueba los límites de bus operativo antes de consultar autenticación o transporte', async () => {
+    for (const busId of ['', 'A'.repeat(65), 'A#B', 'A?B', 'A%2fB']) {
+      await assert.rejects(readTracking({ ...operative, busId }, noAuthentication, 100,
+        async () => assert.fail('Invalid bus must not fetch')), { message: 'Invalid local RTDB configuration' });
+    }
+    for (const busId of ['0', 'A'.repeat(64)]) {
+      let calls = 0;
+      const result = await readTracking({ ...operative, busId }, noAuthentication, 100, async (url, init) => {
+        calls++;
+        assert.equal(url, `${operative.origin}ubicacion_buses/${busId}.json`);
+        assert.equal(init.method, 'GET');
+        assert.equal(init.redirect, 'manual');
+        assert.deepEqual(init.headers, { Accept: 'application/json' });
+        assert.equal(init.body, undefined);
+        assert.equal(Object.hasOwn(init, 'credentials'), false);
+        return new Response('null');
+      });
+      assert.deepEqual(result, { status: 'missing', data: null });
+      assert.equal(calls, 1);
+    }
+  });
+
+  it('solo realiza GET al bus configurado, sin query, cabeceras de autenticación ni proveedor de token', async () => {
+    let calls = 0;
+    const result = await readTracking(operative, noAuthentication, 1000, async (url, init) => {
+      calls++;
+      assert.equal(url, 'https://burritounmsm-default-rtdb.firebaseio.com/ubicacion_buses/BUS-001.json');
+      assert.equal(new URL(url).search, '');
+      assert.equal(init.method, 'GET');
+      assert.equal(init.redirect, 'manual');
+      assert.equal(init.body, undefined);
+      assert.deepEqual(init.headers, { Accept: 'application/json' });
+      return new Response(JSON.stringify(payload));
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.status, 'ok');
+  });
+
+  for (const override of [
+    { mode: undefined }, { mode: 'unknown' }, { origin: 'http://burritounmsm-default-rtdb.firebaseio.com' },
+    { origin: 'https://elburrito-staging-default-rtdb.firebaseio.com' },
+    { origin: 'https://burritounmsm-default-rtdb.firebaseio.com.evil.invalid' },
+    { origin: 'https://burritounmsm-default-rtdb.firebaseio.com:444' },
+    { origin: 'https://burritounmsm-default-rtdb.firebaseio.com/other' },
+    { origin: 'https://user:secret@burritounmsm-default-rtdb.firebaseio.com' },
+    { origin: 'https://burritounmsm-default-rtdb.firebaseio.com/?ns=other' },
+    { namespace: target.namespace }, { busId: '' }, { busId: '../other' },
+  ]) {
+    it(`rechaza configuración operativa alterada: ${JSON.stringify(override)}`, async () => {
+      await assert.rejects(readTracking({ ...operative, ...override } as typeof operative, noAuthentication, 1000,
+        async () => assert.fail('No network allowed')), /Invalid local RTDB configuration/);
+    });
+  }
+
+  it('no sigue redirects ni reintenta con otra identidad o destino ante errores', async () => {
+    for (const status of [302, 401, 403, 500]) {
+      let calls = 0;
+      const result = await readTracking(operative, noAuthentication, 1000, async () => {
+        calls++;
+        return new Response('PRIVATE ERROR', { status });
+      });
+      assert.equal(result.status, 'unavailable');
+      assert.equal(calls, 1);
+      assert.ok(!JSON.stringify(result).includes('PRIVATE'));
+    }
+  });
+
+  it('conserva timeout, límite de respuesta y ausencia de datos en modo público', async () => {
+    const timeout = await readTracking(operative, noAuthentication, 10, () => new Promise<never>(() => {}));
+    assert.equal(timeout.error, 'timeout');
+    const oversized = await readTracking(operative, noAuthentication, 1000, async () => new Response('x'.repeat(20_000)));
+    assert.equal(oversized.error, 'response-too-large');
+    const missing = await readAndEvaluate(operativeEnv, { auth: noAuthentication, fetchImpl: jsonFetch(null), now: () => now });
+    assert.equal(missing.source.status, 'missing');
+    assert.equal(missing.evaluation.classification, 'insufficient-data');
+  });
+
+  it('identifica el modo público en el diagnóstico y no convierte publicación en GPS nuevo', async () => {
+    const result = await readAndEvaluate(operativeEnv, { auth: noAuthentication, fetchImpl: jsonFetch(payload), now: () => now });
+    assert.equal(result.mode, 'operative-public');
+    assert.equal(result.authentication, 'public-no-token');
+    assert.equal(result.evaluation.classification, 'active-publishing');
+    assert.equal(result.evaluation.gpsMeasurement.state, 'unknown');
+    assert.ok(!JSON.stringify(result).includes('PRIVATE'));
+  });
+
+  it('no elige bus por defecto ni modo desconocido y no permite cron operativo', async () => {
+    for (const override of [{ BUS_ID: '' }, { BUS_ID: undefined }, { RTDB_MODE: 'unknown' }]) {
+      await assert.rejects(readAndEvaluate({ ...operativeEnv, ...override }, {
+        auth: noAuthentication, fetchImpl: async () => assert.fail('No network allowed'),
+      }), /Invalid local/);
+    }
+    const originalError = console.error;
+    const originalFetch = globalThis.fetch;
+    const messages: unknown[][] = [];
+    console.error = (...args: unknown[]) => { messages.push(args); };
+    globalThis.fetch = async () => assert.fail('Scheduled operative reads are not authorized');
+    try {
+      await worker.scheduled({} as ScheduledController, operativeEnv);
+      assert.deepEqual(messages, [['{"error":"operative-manual-only"}']]);
+    } finally {
+      console.error = originalError;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('la configuración operativa queda incompleta sin bus y no activa rutas públicas', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { URL: NodeURL } = await import('node:url');
+    const config = JSON.parse(await readFile(new NodeURL('../wrangler.jsonc', import.meta.url), 'utf8'));
+    assert.equal(config.env.operative.vars.RTDB_MODE, 'operative-public');
+    assert.equal(config.env.operative.vars.BUS_ID, '');
+    assert.equal(config.env.operative.workers_dev, false);
+    assert.equal(config.env.operative.preview_urls, false);
+    assert.equal(config.env.operative.routes, undefined);
+    assert.equal(config.env.operative.triggers, undefined);
+  });
+});

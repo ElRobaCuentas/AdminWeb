@@ -1,4 +1,7 @@
+export type RtdbMode = 'local-authenticated' | 'operative-public';
+
 export interface RtdbTarget {
+  readonly mode?: RtdbMode;
   readonly origin: string;
   readonly namespace: string;
   readonly busId: string;
@@ -23,12 +26,24 @@ export function isLoopback(hostname: string): boolean {
   return ['127.0.0.1', 'localhost', '[::1]'].includes(hostname);
 }
 
+export function getRtdbMode(value: string | undefined): RtdbMode {
+  if (value === undefined || value === 'local-authenticated') return 'local-authenticated';
+  if (value === 'operative-public') return 'operative-public';
+  throw new Error('Invalid local RTDB configuration');
+}
+
+const OPERATIVE_ORIGIN = 'https://burritounmsm-default-rtdb.firebaseio.com';
+const OPERATIVE_NAMESPACE = 'burritounmsm-default-rtdb';
+
 export function validateTarget(target: RtdbTarget): void {
   try {
     const url = new URL(target.origin);
-    if (url.protocol !== 'http:' || !isLoopback(url.hostname) || url.username || url.password ||
+    const mode = getRtdbMode(target.mode);
+    const destinationAllowed = mode === 'operative-public'
+      ? url.origin === OPERATIVE_ORIGIN && target.namespace === OPERATIVE_NAMESPACE
+      : url.protocol === 'http:' && isLoopback(url.hostname) && /^demo-[a-z0-9-]{1,60}$/.test(target.namespace);
+    if (!destinationAllowed || url.username || url.password ||
       url.pathname !== '/' || url.search || url.hash ||
-      !/^demo-[a-z0-9-]{1,60}$/.test(target.namespace) ||
       !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(target.busId)) throw new Error();
   } catch {
     throw new Error('Invalid local RTDB configuration');
@@ -75,18 +90,20 @@ export async function readTracking(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const unavailable = (error: ReadError, httpStatus?: number): ReadResult => ({ status: 'unavailable', error, ...(httpStatus === undefined ? {} : { httpStatus }) });
   const operation = async (): Promise<ReadResult> => {
-    let token: string | null;
-    try {
-      token = await authentication.getIdToken(controller.signal);
-    } catch {
-      return unavailable('authentication-unavailable');
-    }
-    if (!token || token === 'owner' || /\s/.test(token)) return unavailable('authentication-unavailable');
-    controller.signal.throwIfAborted();
     const url = new URL(`/ubicacion_buses/${target.busId}.json`, target.origin);
-    url.searchParams.set('ns', target.namespace);
-    url.searchParams.set('auth', token);
-    // Nunca registrar esta URL: Firebase REST transporta el ID token en el query.
+    if (getRtdbMode(target.mode) === 'local-authenticated') {
+      let token: string | null;
+      try {
+        token = await authentication.getIdToken(controller.signal);
+      } catch {
+        return unavailable('authentication-unavailable');
+      }
+      if (!token || token === 'owner' || /\s/.test(token)) return unavailable('authentication-unavailable');
+      url.searchParams.set('ns', target.namespace);
+      url.searchParams.set('auth', token);
+    }
+    controller.signal.throwIfAborted();
+    // Modo operativo: sin token, query ni fallback. No registrar URLs autenticadas del emulador.
     const response = await fetchImpl(url.href, {
       method: 'GET', redirect: 'manual', signal: controller.signal,
       headers: { Accept: 'application/json' },

@@ -1,10 +1,11 @@
 import { evaluateTracking } from '../../src/domain/evaluateTracking.ts';
-import { isLoopback, readTracking, validateTarget } from './firebaseRtdb.ts';
+import { getRtdbMode, isLoopback, readTracking, validateTarget } from './firebaseRtdb.ts';
 import type { AuthenticationProvider, HttpFetch } from './firebaseRtdb.ts';
 import { toTrackingObservation } from './toTrackingObservation.ts';
 
 export interface Env {
   PULSO_LOCAL_ONLY?: string;
+  RTDB_MODE?: string;
   RTDB_ORIGIN?: string;
   RTDB_NAMESPACE?: string;
   BUS_ID?: string;
@@ -30,7 +31,8 @@ function integer(value: string | undefined, minimum: number, maximum = Number.MA
 
 export async function readAndEvaluate(env: Env, dependencies: Dependencies = {}) {
   if (env.PULSO_LOCAL_ONLY !== 'true') throw new Error('Invalid local execution mode');
-  const target = { origin: env.RTDB_ORIGIN ?? '', namespace: env.RTDB_NAMESPACE ?? '', busId: env.BUS_ID ?? '' };
+  const mode = getRtdbMode(env.RTDB_MODE);
+  const target = { mode, origin: env.RTDB_ORIGIN ?? '', namespace: env.RTDB_NAMESPACE ?? '', busId: env.BUS_ID ?? '' };
   validateTarget(target);
   const config = {
     publicationStaleAfterMs: integer(env.PUBLICATION_STALE_AFTER_MS, 0),
@@ -48,8 +50,9 @@ export async function readAndEvaluate(env: Env, dependencies: Dependencies = {})
   const evaluation = evaluateTracking({ observation, previous: null, config });
   // Proyección deliberada: no devolver payloads, coordenadas precisas, tokens ni errores sin filtrar.
   return {
-    evaluatedAt, busId: target.busId, continuity: 'not-persisted' as const,
-    authentication: 'temporary-id-token' as const,
+    evaluatedAt, ...(mode === 'operative-public' ? { mode } : {}),
+    busId: target.busId, continuity: 'not-persisted' as const,
+    authentication: mode === 'operative-public' ? 'public-no-token' as const : 'temporary-id-token' as const,
     source: { status: source.status, ...(source.error ? { error: source.error } : {}), ...(source.httpStatus === undefined ? {} : { httpStatus: source.httpStatus }) },
     input: {
       isActive: observation.current.isActive ?? null,
@@ -90,6 +93,11 @@ export default {
     }
   },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    // La primera lectura operativa se solicita manualmente; no habilitar sondeo programado.
+    if (env.RTDB_MODE === 'operative-public') {
+      console.error(JSON.stringify({ error: 'operative-manual-only' }));
+      return;
+    }
     try {
       console.log(JSON.stringify(await readAndEvaluate(env)));
     } catch {

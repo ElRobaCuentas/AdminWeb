@@ -2,9 +2,13 @@ import { evaluateTracking } from '../../src/domain/evaluateTracking.ts';
 import { getRtdbMode, isLoopback, readTracking, validateTarget } from './firebaseRtdb.ts';
 import type { AuthenticationProvider, HttpFetch } from './firebaseRtdb.ts';
 import { toTrackingObservation } from './toTrackingObservation.ts';
+import { keyForTarget, loadTrackingState, MemoryError, saveTrackingCheck } from './trackingStore.ts';
+import type { CheckSummary } from './trackingStore.ts';
 
 export interface Env {
   PULSO_LOCAL_ONLY?: string;
+  PULSO_MEMORY?: string;
+  PULSO_DB?: D1Database;
   RTDB_MODE?: string;
   RTDB_ORIGIN?: string;
   RTDB_NAMESPACE?: string;
@@ -22,6 +26,15 @@ interface Dependencies {
   now?: () => number;
 }
 
+interface TrackingDiagnostic extends CheckSummary {
+  evaluatedAt: number;
+  mode?: 'operative-public';
+  busId: string;
+  continuity: 'not-persisted' | 'persisted';
+  authentication: 'public-no-token' | 'temporary-id-token';
+  memory?: Awaited<ReturnType<typeof saveTrackingCheck>>;
+}
+
 function integer(value: string | undefined, minimum: number, maximum = Number.MAX_SAFE_INTEGER): number {
   if (!value || !/^\d+$/.test(value)) throw new Error('Invalid local numeric configuration');
   const parsed = Number(value);
@@ -29,7 +42,7 @@ function integer(value: string | undefined, minimum: number, maximum = Number.MA
   return parsed;
 }
 
-export async function readAndEvaluate(env: Env, dependencies: Dependencies = {}) {
+export async function readAndEvaluate(env: Env, dependencies: Dependencies = {}): Promise<TrackingDiagnostic> {
   if (env.PULSO_LOCAL_ONLY !== 'true') throw new Error('Invalid local execution mode');
   const mode = getRtdbMode(env.RTDB_MODE);
   const target = { mode, origin: env.RTDB_ORIGIN ?? '', namespace: env.RTDB_NAMESPACE ?? '', busId: env.BUS_ID ?? '' };
@@ -40,6 +53,13 @@ export async function readAndEvaluate(env: Env, dependencies: Dependencies = {})
     maxFutureSkewMs: integer(env.MAX_FUTURE_SKEW_MS, 0),
   };
   const timeout = integer(env.READ_TIMEOUT_MS, 1, 30_000);
+  const memoryMode = env.PULSO_MEMORY ?? 'off';
+  if (memoryMode !== 'off' && memoryMode !== 'd1-local') throw new Error('Invalid local memory mode');
+  const database = memoryMode === 'd1-local' ? env.PULSO_DB : undefined;
+  if (memoryMode === 'd1-local' && !database) throw new MemoryError('memory-unavailable');
+  const key = keyForTarget(target);
+  // Tomar la revisión ANTES del HTTP: una comprobación lenta no debe pisar otra aceptada.
+  const previous = database ? await loadTrackingState(database, key, config) : null;
   const auth = dependencies.auth ?? { getIdToken: async () => env.FIREBASE_ID_TOKEN ?? null };
   const source = await readTracking(target, auth, timeout, dependencies.fetchImpl);
   const evaluatedAt = (dependencies.now ?? Date.now)();
@@ -47,9 +67,9 @@ export async function readAndEvaluate(env: Env, dependencies: Dependencies = {})
   const observation = source.status === 'unavailable'
     ? { ...adapted.observation, sourceAccess: 'unavailable' as const }
     : adapted.observation;
-  const evaluation = evaluateTracking({ observation, previous: null, config });
+  const evaluation = evaluateTracking({ observation, previous: previous?.prior ?? null, config });
   // Proyección deliberada: no devolver payloads, coordenadas precisas, tokens ni errores sin filtrar.
-  return {
+  const diagnostic = {
     evaluatedAt, ...(mode === 'operative-public' ? { mode } : {}),
     busId: target.busId, continuity: 'not-persisted' as const,
     authentication: mode === 'operative-public' ? 'public-no-token' as const : 'temporary-id-token' as const,
@@ -66,6 +86,11 @@ export async function readAndEvaluate(env: Env, dependencies: Dependencies = {})
       recoveryState: evaluation.recoveryState, recoveryValidObservations: evaluation.recoveryValidObservations,
     },
   };
+  if (!database) return diagnostic;
+  const memory = await saveTrackingCheck(database, key, previous, evaluatedAt, config, evaluation, {
+    source: diagnostic.source, input: diagnostic.input, evaluation: diagnostic.evaluation,
+  });
+  return { ...diagnostic, continuity: 'persisted' as const, memory };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -88,7 +113,8 @@ export default {
     try {
       const result = await readAndEvaluate(env);
       return json(result, result.source.status === 'unavailable' ? 503 : 200);
-    } catch {
+    } catch (error) {
+      if (error instanceof MemoryError) return json({ error: error.code }, error.code === 'memory-conflict' ? 409 : 503);
       return json({ error: 'invalid-local-configuration' }, 400);
     }
   },
@@ -100,8 +126,8 @@ export default {
     }
     try {
       console.log(JSON.stringify(await readAndEvaluate(env)));
-    } catch {
-      console.error(JSON.stringify({ error: 'invalid-local-configuration' }));
+    } catch (error) {
+      console.error(JSON.stringify({ error: error instanceof MemoryError ? error.code : 'invalid-local-configuration' }));
     }
   },
 };

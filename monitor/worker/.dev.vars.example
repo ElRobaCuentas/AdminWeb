@@ -1,5 +1,7 @@
 # Configuración del modo local existente.
 RTDB_MODE=local-authenticated
+# Memoria optativa: activar con --env memory-local --var PULSO_MEMORY:d1-local.
+PULSO_MEMORY=off
 RTDB_ORIGIN=http://127.0.0.1:9000
 RTDB_NAMESPACE=demo-el-burrito-i03i04
 # Completar explícitamente la clave exacta del bus; no hay un bus operativo predeterminado.

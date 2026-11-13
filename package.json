@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:pulso": "vite --mode pulso-local --host 127.0.0.1",
+    "emulators:pulso": "node monitor/worker/scripts/test-api-local.ts --serve",
+    "test:pulso": "node --test tests/pulso.test.ts tests/pulsoProduction.test.ts",
+    "test:pulso:integration": "node monitor/worker/scripts/test-api-local.ts pulsoScreen.integration.test.ts",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

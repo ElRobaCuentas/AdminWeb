@@ -18,7 +18,9 @@ export const existeAdministrador = async (uid: string): Promise<boolean> => {
   } catch (error) {
     // En esta ruta la regla RTDB exige que el usuario ya figure en
     // /administradores: PERMISSION_DENIED equivale a "no es administrador".
-    if ((error as { code?: string }).code === 'PERMISSION_DENIED') {
+    // get() de RTDB también puede rechazar con Error("Permission denied") sin code.
+    if ((error as { code?: string }).code === 'PERMISSION_DENIED' ||
+      (error instanceof Error && error.message === 'Permission denied')) {
       return false;
     }
     // Timeout o fallo de red: no se puede verificar. Se propaga para que el

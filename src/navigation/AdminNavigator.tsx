@@ -4,6 +4,7 @@ import { ChoferesScreen } from '../features/admin/screen/ChoferesScreen';
 import { BusesScreen } from '../features/admin/screen/BusesScreen';
 import { AsignacionesScreen } from '../features/admin/screen/AsignacionesScreen';
 import { AdminsScreen } from '../features/admin/screen/AdminsScreen';
+import { PulsoScreen } from '../features/pulso/screen/PulsoScreen';
 
 export const AdminNavigator = () => (
   <AppShell>
@@ -13,6 +14,7 @@ export const AdminNavigator = () => (
       <Route path="/buses" element={<BusesScreen />} />
       <Route path="/asignaciones" element={<Navigate to="/" replace />} />
       <Route path="/admins" element={<AdminsScreen />} />
+      <Route path="/pulso" element={<PulsoScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   </AppShell>

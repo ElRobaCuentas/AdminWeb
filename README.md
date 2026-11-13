@@ -132,6 +132,18 @@ npm run dev
 El puerto predeterminado del dev server es `http://localhost:5173`; consultar
 la URL que imprima Vite si ese puerto está ocupado.
 
+## Monitor PULSO (local)
+
+El monitor de seguimiento vive en `monitor/` y se ejecuta aparte del panel:
+
+```bash
+cd monitor/worker
+npm run dev           # Wrangler en http://127.0.0.1:8787 (comprobación manual /evaluate)
+npm run watch:local   # dispara la comprobación programada cada minuto; Ctrl+C la detiene
+```
+
+La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local` y el modo operativo sigue sin ejecución programada. El diseño completo y el despliegue pendiente en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2).
+
 ## Build y deploy
 
 ```bash

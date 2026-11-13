@@ -12,6 +12,7 @@
     "memory-local": {
       "workers_dev": false,
       "preview_urls": false,
+      "triggers": { "crons": ["* * * * *"] },
       "d1_databases": [{
         "binding": "PULSO_DB",
         "database_name": "pulso-memory-local",

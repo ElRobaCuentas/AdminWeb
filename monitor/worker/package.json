@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "wrangler dev --local --ip 127.0.0.1 --port 8787 --test-scheduled",
-    "test": "node --test tests/readAndEvaluate.test.ts tests/trackingStore.test.ts",
+    "watch:local": "node scripts/watch-local.ts",
+    "test": "node --test tests/readAndEvaluate.test.ts tests/trackingStore.test.ts tests/scheduled.test.ts tests/watchLocal.test.ts",
     "test:memory": "node --test tests/trackingStore.test.ts",
     "test:integration": "node --test tests/rtdb.integration.test.ts",
     "typecheck": "tsc --noEmit"

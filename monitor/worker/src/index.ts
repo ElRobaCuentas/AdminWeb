@@ -93,6 +93,14 @@ export async function readAndEvaluate(env: Env, dependencies: Dependencies = {})
   return { ...diagnostic, continuity: 'persisted' as const, memory };
 }
 
+export async function runScheduledCheck(env: Env, dependencies: Dependencies = {}): Promise<TrackingDiagnostic> {
+  // Esta etapa programa únicamente el simulador local; el destino operativo sigue siendo manual.
+  if (getRtdbMode(env.RTDB_MODE) === 'operative-public') throw new Error('operative-manual-only');
+  // Sin memoria no se pueden conservar vigilancia, recuperación ni incidentes entre minutos.
+  if (env.PULSO_MEMORY !== 'd1-local') throw new MemoryError('memory-unavailable');
+  return readAndEvaluate(env, dependencies);
+}
+
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status, headers: {
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
@@ -119,15 +127,14 @@ export default {
     }
   },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    // La primera lectura operativa se solicita manualmente; no habilitar sondeo programado.
-    if (env.RTDB_MODE === 'operative-public') {
-      console.error(JSON.stringify({ error: 'operative-manual-only' }));
-      return;
-    }
     try {
-      console.log(JSON.stringify(await readAndEvaluate(env)));
+      console.log(JSON.stringify(await runScheduledCheck(env)));
     } catch (error) {
-      console.error(JSON.stringify({ error: error instanceof MemoryError ? error.code : 'invalid-local-configuration' }));
+      const code = error instanceof MemoryError ? error.code :
+        error instanceof Error && error.message === 'operative-manual-only' ? 'operative-manual-only' : 'invalid-local-configuration';
+      console.error(JSON.stringify({ error: code }));
+      // Distinguir una ejecución fallida de una caída de fuente guardada correctamente.
+      throw new Error(code);
     }
   },
 };

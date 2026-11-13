@@ -154,7 +154,9 @@ describe('adaptación del contrato actual y evaluación', () => {
     const messages: unknown[][] = [];
     console.error = (...args: unknown[]) => { messages.push(args); };
     try {
-      await worker.scheduled({} as ScheduledController, { ...env, BUS_ID: '/', FIREBASE_ID_TOKEN: 'PRIVATE TOKEN' });
+      await assert.rejects(worker.scheduled({} as ScheduledController, {
+        ...env, PULSO_MEMORY: 'd1-local', BUS_ID: '/', FIREBASE_ID_TOKEN: 'PRIVATE TOKEN',
+      }), { message: 'invalid-local-configuration' });
       assert.deepEqual(messages, [['{"error":"invalid-local-configuration"}']]);
     } finally {
       console.error = original;
@@ -196,7 +198,7 @@ describe('fronteras de seguridad e instalación aislada', () => {
       assert.equal(response.headers.get('Cache-Control'), 'no-store');
     }
   });
-  it('mantiene dependencias de desarrollo y configuración sin rutas públicas ni cron', async () => {
+  it('mantiene dependencias de desarrollo y cron solo en el entorno local con memoria', async () => {
     const { readFile } = await import('node:fs/promises');
     const { URL: NodeURL } = await import('node:url');
     const load = async (path: string) => JSON.parse(await readFile(new NodeURL(path, import.meta.url), 'utf8'));
@@ -215,6 +217,10 @@ describe('fronteras de seguridad e instalación aislada', () => {
     assert.equal(config.send_metrics, false);
     assert.equal(config.routes, undefined);
     assert.equal(config.triggers, undefined);
+    assert.deepEqual(config.env['memory-local'].triggers.crons, ['* * * * *']);
+    assert.equal(config.env['memory-local'].vars.PULSO_MEMORY, 'd1-local');
+    assert.equal(config.env['memory-local'].vars.RTDB_MODE, 'local-authenticated');
+    assert.equal(config.env['memory-local'].d1_databases[0].remote, false);
     assert.equal(config.dev.ip, '127.0.0.1');
   });
 });
@@ -336,7 +342,7 @@ describe('lectura operativa pública explícita, sin red real', () => {
     console.error = (...args: unknown[]) => { messages.push(args); };
     globalThis.fetch = async () => assert.fail('Scheduled operative reads are not authorized');
     try {
-      await worker.scheduled({} as ScheduledController, operativeEnv);
+      await assert.rejects(worker.scheduled({} as ScheduledController, operativeEnv), { message: 'operative-manual-only' });
       assert.deepEqual(messages, [['{"error":"operative-manual-only"}']]);
     } finally {
       console.error = originalError;

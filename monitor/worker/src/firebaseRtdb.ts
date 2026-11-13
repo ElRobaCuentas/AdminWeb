@@ -52,7 +52,7 @@ export function validateTarget(target: RtdbTarget): void {
 
 const MAX_RESPONSE_BYTES = 16_384;
 
-async function readBody(response: Response): Promise<string | null> {
+export async function readBody(response: Response): Promise<string | null> {
   if (Number(response.headers.get('Content-Length')) > MAX_RESPONSE_BYTES) {
     await response.body?.cancel();
     return null;

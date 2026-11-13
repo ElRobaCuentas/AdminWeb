@@ -4,8 +4,10 @@ import type { AuthenticationProvider, HttpFetch } from './firebaseRtdb.ts';
 import { toTrackingObservation } from './toTrackingObservation.ts';
 import { keyForTarget, loadTrackingState, MemoryError, saveTrackingCheck } from './trackingStore.ts';
 import type { CheckSummary } from './trackingStore.ts';
+import { handlePulsoRead } from './pulsoRead.ts';
+import type { AdminAuthorizationEnv } from './adminAuthorization.ts';
 
-export interface Env {
+export interface Env extends AdminAuthorizationEnv {
   PULSO_LOCAL_ONLY?: string;
   PULSO_MEMORY?: string;
   PULSO_DB?: D1Database;
@@ -111,6 +113,10 @@ function json(body: unknown, status = 200): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/api/pulso') {
+      const result = await handlePulsoRead(request, env);
+      return json(result.body, result.status);
+    }
     if (env.PULSO_LOCAL_ONLY !== 'true' || url.protocol !== 'http:' || !isLoopback(url.hostname) ||
       request.headers.get('X-Pulso-Local') !== '1' ||
       (request.headers.has('Origin') && request.headers.get('Origin') !== url.origin) ||

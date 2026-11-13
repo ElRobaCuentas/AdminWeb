@@ -144,6 +144,25 @@ npm run watch:local   # dispara la comprobación programada cada minuto; Ctrl+C 
 
 La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local` y el modo operativo sigue sin ejecución programada. El diseño completo y el despliegue pendiente en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2).
 
+### API de lectura para Central (pendiente de consumo)
+
+`GET /api/pulso` (`http://127.0.0.1:8787/api/pulso`) expone el último estado,
+la última comprobación y los incidentes guardados en D1, **sin ejecutar el
+evaluador**. Autoriza con el ID token de la sesión de Central
+(`Authorization: Bearer`), que Firebase verifica contra `/administradores/{uid}`
+con las reglas existentes: no se define una contraseña adicional. Requiere la
+memoria D1 ya descrita y, además, estas variables de autorización en la
+configuración del Worker (`wrangler.jsonc` / `.dev.vars`):
+
+```bash
+PULSO_ADMIN_PROJECT_ID=
+PULSO_ADMIN_RTDB_ORIGIN=       # https://burritounmsm-default-rtdb.firebaseio.com o loopback demo-*
+PULSO_ADMIN_RTDB_NAMESPACE=
+```
+
+Sin esas variables la API falla cerrado (503). La pantalla de Central que la
+consuma sigue pendiente (ROADMAP).
+
 ## Build y deploy
 
 ```bash

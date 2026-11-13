@@ -39,10 +39,14 @@ const auth = { getIdToken: async () => 'PRIVATE_TEST_TOKEN' };
 function check(at = NOW, data: unknown = payload(at), overrides: Partial<Env> = {}) {
   return readAndEvaluate(env(overrides), { auth, now: () => at, fetchImpl: async () => new Response(JSON.stringify(data)) });
 }
-async function rows(table: 'tracking_state' | 'tracking_observations') {
-  return (await db.prepare(`SELECT * FROM ${table} ORDER BY source_key, bus_id, revision`).all()).results;
+function unavailable(at: number, overrides: Partial<Env> = {}) {
+  return readAndEvaluate(env(overrides), { auth, now: () => at, fetchImpl: async () => { throw new Error('PRIVATE NETWORK ERROR'); } });
 }
-async function snapshot() { return JSON.stringify([await rows('tracking_state'), await rows('tracking_observations')]); }
+async function rows(table: 'tracking_state' | 'tracking_observations' | 'tracking_incidents') {
+  const order = table === 'tracking_incidents' ? 'opened_at, incident_id' : 'source_key, bus_id, revision';
+  return (await db.prepare(`SELECT * FROM ${table} ORDER BY ${order}`).all()).results;
+}
+async function snapshot() { return JSON.stringify([await rows('tracking_state'), await rows('tracking_observations'), await rows('tracking_incidents')]); }
 const memoryFailure = (code: string) => (error: unknown) => error instanceof MemoryError && error.code === code && error.message === code;
 
 before(async () => {
@@ -50,11 +54,13 @@ before(async () => {
   await mkdir(parent, { recursive: true });
   scratch = await mkdtemp(path.join(parent, 'pulso-d1-test-'));
   await open();
-  const migration = await readFile(new NodeURL('../migrations/0001_tracking_memory.sql', import.meta.url), 'utf8');
-  await db.batch(migration.split(';').map(sql => sql.trim()).filter(Boolean).map(sql => db.prepare(sql)));
+  for (const name of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql']) {
+    const migration = await readFile(new NodeURL(`../migrations/${name}`, import.meta.url), 'utf8');
+    await db.batch(migration.split(';').map(sql => sql.trim()).filter(Boolean).map(sql => db.prepare(sql)));
+  }
 });
 beforeEach(async () => {
-  await db.batch([db.prepare('DELETE FROM tracking_observations'), db.prepare('DELETE FROM tracking_state')]);
+  await db.batch([db.prepare('DELETE FROM tracking_incidents'), db.prepare('DELETE FROM tracking_observations'), db.prepare('DELETE FROM tracking_state')]);
 });
 after(async () => {
   await proxy?.dispose();
@@ -232,7 +238,7 @@ describe('memoria real D1 local, con RTDB simulada', () => {
       started(); await delay; return new Response(JSON.stringify(payload(NOW + 120_000)));
     } });
     await ready;
-    await db.batch([db.prepare('DELETE FROM tracking_observations'), db.prepare('DELETE FROM tracking_state')]);
+    await db.batch([db.prepare('DELETE FROM tracking_incidents'), db.prepare('DELETE FROM tracking_observations'), db.prepare('DELETE FROM tracking_state')]);
     await check(NOW + 60_000);
     const before = await snapshot();
     release();
@@ -302,5 +308,288 @@ describe('memoria real D1 local, con RTDB simulada', () => {
     await assert.rejects(slow, memoryFailure('memory-conflict'));
     assert.equal(await snapshot(), before);
     assert.equal((await check(NOW + 60_001, payload(NOW + 60_000))).evaluation.recoveryValidObservations, 1);
+  });
+
+  it('no abre incidentes antes de observar actividad ni después de observar una parada', async () => {
+    await unavailable(NOW);
+    await check(NOW + 1, null);
+    await unavailable(NOW + 2);
+    await check(NOW + 3, { isActive: false });
+    await unavailable(NOW + 4);
+    assert.equal((await rows('tracking_incidents')).length, 0);
+    assert.equal((await rows('tracking_state'))[0].monitoring_active, 0);
+  });
+
+  it('publicaciones sanas y coordenadas repetidas no abren incidentes', async () => {
+    await check();
+    await check(NOW + 60_000);
+    assert.equal((await rows('tracking_incidents')).length, 0);
+    assert.equal((await rows('tracking_state'))[0].monitoring_active, 1);
+  });
+
+  it('abre al superar tres minutos y actualiza el mismo incidente continuo', async () => {
+    const data = { ...payload(NOW), timestamp: NOW };
+    await check(NOW, data);
+    await check(NOW + 180_000, data);
+    assert.equal((await rows('tracking_incidents')).length, 0);
+    await check(NOW + 180_001, data);
+    const first = (await rows('tracking_incidents'))[0];
+    await check(NOW + 240_000, data);
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 1);
+    assert.equal(incidents[0].incident_id, first.incident_id);
+    assert.equal(incidents[0].kind, 'tracking-interrupted');
+    assert.equal(incidents[0].opened_at, NOW + 180_001);
+    assert.equal(incidents[0].updated_at, NOW + 240_000);
+    assert.equal(incidents[0].check_count, 2);
+    assert.equal(incidents[0].closed_at, null);
+  });
+
+  it('cierra seguimiento solo con dos publicaciones crecientes, sin contar lecturas repetidas', async () => {
+    await check(NOW, payload(NOW - 240_000));
+    await check(NOW + 60_000);
+    await check(NOW + 61_000, payload(NOW + 60_000));
+    assert.equal((await rows('tracking_incidents'))[0].closed_at, null);
+    await check(NOW + 120_000);
+    const incident = (await rows('tracking_incidents'))[0];
+    assert.equal(incident.close_reason, 'publications-recovered');
+    assert.equal(incident.closed_at, NOW + 120_000);
+    assert.equal(incident.duration_ms, 120_000);
+    assert.equal(incident.check_count, 4);
+    await check(NOW + 180_000);
+    assert.deepEqual((await rows('tracking_incidents'))[0], incident);
+    await check(NOW + 420_000, payload(NOW + 180_000));
+    assert.equal((await rows('tracking_incidents')).length, 2);
+  });
+
+  it('una recaída durante recuperación conserva el incidente y exige dos confirmaciones nuevas', async () => {
+    await check(NOW, payload(NOW - 240_000));
+    const id = (await rows('tracking_incidents'))[0].incident_id;
+    await check(NOW + 60_000);
+    await check(NOW + 300_000, payload(NOW + 60_000));
+    await check(NOW + 360_000);
+    assert.equal((await rows('tracking_incidents'))[0].closed_at, null);
+    await check(NOW + 420_000);
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 1);
+    assert.equal(incidents[0].incident_id, id);
+    assert.equal(incidents[0].close_reason, 'publications-recovered');
+  });
+
+  it('fuente inaccesible se abre una vez durante vigilancia y cierra al volver aunque siga desactualizado', async () => {
+    await check();
+    await unavailable(NOW + 60_000);
+    await unavailable(NOW + 120_000);
+    let incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 1);
+    assert.equal(incidents[0].kind, 'source-unavailable');
+    assert.equal(incidents[0].check_count, 2);
+    await check(NOW + 240_000, payload(NOW));
+    incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 2);
+    assert.equal(incidents[0].close_reason, 'source-accessible');
+    assert.equal(incidents[0].duration_ms, 180_000);
+    assert.equal(incidents[1].kind, 'tracking-interrupted');
+    assert.equal(incidents[1].closed_at, null);
+    await unavailable(NOW + 300_000);
+    incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 3);
+    assert.equal(incidents[1].closed_at, null);
+    assert.equal(incidents[2].kind, 'source-unavailable');
+  });
+
+  it('ambos incidentes pueden coexistir sin perder recuperación pendiente ante fallo de fuente', async () => {
+    await check(NOW, payload(NOW - 240_000));
+    await check(NOW + 60_000);
+    await unavailable(NOW + 120_000);
+    const open = await rows('tracking_incidents');
+    assert.equal(open.length, 2);
+    assert.ok(open.every(incident => incident.closed_at === null));
+    await check(NOW + 180_000);
+    const closed = await rows('tracking_incidents');
+    assert.equal(closed.find(i => i.kind === 'tracking-interrupted')?.close_reason, 'publications-recovered');
+    assert.equal(closed.find(i => i.kind === 'source-unavailable')?.close_reason, 'source-accessible');
+  });
+
+  it('DETENER cierra sin inventar recuperación y los fallos nocturnos no abren incidentes', async () => {
+    await check(NOW, payload(NOW - 240_000));
+    await unavailable(NOW + 60_000);
+    const stopped = await check(NOW + 120_000, { isActive: false });
+    assert.equal(stopped.evaluation.recoveryState, 'none');
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.find(i => i.kind === 'tracking-interrupted')?.close_reason, 'tracking-inactive');
+    assert.equal(incidents.find(i => i.kind === 'source-unavailable')?.close_reason, 'source-accessible');
+    await unavailable(NOW + DAY);
+    await check(NOW + DAY + 1, { isActive: false });
+    assert.deepEqual(await rows('tracking_incidents'), incidents);
+    await check(NOW + DAY + 2);
+    await unavailable(NOW + DAY + 3);
+    assert.equal((await rows('tracking_incidents')).length, 3);
+  });
+
+  it('datos ausentes o inválidos no detienen vigilancia ni simulan recuperación', async () => {
+    await check(NOW, payload(NOW - 240_000));
+    await check(NOW + 60_000, null);
+    await check(NOW + 120_000, { isActive: 'false' });
+    await unavailable(NOW + 180_000);
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 2);
+    assert.ok(incidents.every(incident => incident.closed_at === null));
+    await check(NOW + 240_000, null);
+    const after = await rows('tracking_incidents');
+    assert.equal(after.find(i => i.kind === 'source-unavailable')?.close_reason, 'source-accessible');
+    assert.equal(after.find(i => i.kind === 'tracking-interrupted')?.closed_at, null);
+  });
+
+  it('isActive true inicia vigilancia aunque todavía no haya timestamp utilizable', async () => {
+    await check(NOW, { isActive: true });
+    assert.equal((await rows('tracking_incidents')).length, 0);
+    await unavailable(NOW + 1);
+    assert.equal((await rows('tracking_incidents'))[0].kind, 'source-unavailable');
+  });
+
+  it('HTTP fallido y respuesta inválida mantienen un único incidente de fuente', async () => {
+    await check();
+    for (const [offset, response] of [
+      [1, new Response('PRIVATE ERROR', { status: 403 })],
+      [2, new Response('invalid json')],
+    ] as const) {
+      await readAndEvaluate(env(), { auth, now: () => NOW + offset, fetchImpl: async () => response });
+    }
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 1);
+    assert.equal(incidents[0].check_count, 2);
+    assert.ok(!JSON.stringify(incidents).includes('PRIVATE'));
+  });
+
+  it('incidentes y vigilancia sobreviven reinicio de D1 y poda de observaciones', async () => {
+    await check(NOW - 8 * DAY, payload(NOW - 9 * DAY));
+    const id = (await rows('tracking_incidents'))[0].incident_id;
+    await proxy.dispose();
+    await open();
+    await unavailable(NOW);
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 2);
+    assert.equal(incidents.find(i => i.kind === 'tracking-interrupted')?.incident_id, id);
+    assert.equal(incidents.find(i => i.kind === 'tracking-interrupted')?.closed_at, null);
+    assert.equal((await rows('tracking_observations')).length, 1);
+    await check(NOW + 60_000);
+    await check(NOW + 120_000);
+    assert.equal((await rows('tracking_incidents')).find(i => i.incident_id === id)?.duration_ms, 8 * DAY + 120_000);
+  });
+
+  it('aísla incidentes y vigilancia por bus y fuente', async () => {
+    await check();
+    await unavailable(NOW + 1, { BUS_ID: 'OTHER-TEST' });
+    await unavailable(NOW + 1, { RTDB_NAMESPACE: 'demo-other-memory' });
+    assert.equal((await rows('tracking_incidents')).length, 0);
+    await unavailable(NOW + 2);
+    await check(NOW + 2, { isActive: false }, { BUS_ID: 'OTHER-TEST' });
+    assert.equal((await rows('tracking_incidents')).length, 1);
+    assert.equal((await rows('tracking_incidents'))[0].closed_at, null);
+  });
+
+  it('dos comprobaciones concurrentes no duplican ni actualizan dos veces el incidente', async () => {
+    await check(NOW, payload(NOW - 240_000));
+    let waiting = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const fetchImpl = async () => {
+      if (++waiting === 2) release();
+      await barrier;
+      return new Response(JSON.stringify(payload(NOW - 240_000)));
+    };
+    const results = await Promise.allSettled([1, 2].map(() =>
+      readAndEvaluate(env(), { auth, now: () => NOW + 60_000, fetchImpl })));
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 1);
+    assert.equal(incidents[0].check_count, 2);
+    assert.equal((await rows('tracking_observations')).length, 2);
+  });
+
+  it('dos primeras detecciones simultáneas crean un solo incidente', async () => {
+    let waiting = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const fetchImpl = async () => {
+      if (++waiting === 2) release();
+      await barrier;
+      return new Response(JSON.stringify(payload(NOW - 240_000)));
+    };
+    const results = await Promise.allSettled([1, 2].map(() =>
+      readAndEvaluate(env(), { auth, now: () => NOW, fetchImpl })));
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+    const rejected = results.find(r => r.status === 'rejected');
+    assert.ok(rejected?.status === 'rejected' && memoryFailure('memory-conflict')(rejected.reason));
+    const incidents = await rows('tracking_incidents');
+    assert.equal(incidents.length, 1);
+    assert.equal(incidents[0].check_count, 1);
+    assert.equal((await rows('tracking_state'))[0].revision, 1);
+    assert.equal((await rows('tracking_observations')).length, 1);
+  });
+
+  it('migrar D1 existente conserva observaciones y la última declaración sin inventar incidentes históricos', async () => {
+    const legacy = await getPlatformProxy<Env>({
+      configPath: path.join(root, 'wrangler.jsonc'), environment: 'memory-local',
+      remoteBindings: false, envFiles: [], persist: { path: path.join(scratch, 'upgrade') },
+    });
+    try {
+      const legacyDb = legacy.env.PULSO_DB!;
+      const initial = await readFile(new NodeURL('../migrations/0001_tracking_memory.sql', import.meta.url), 'utf8');
+      await legacyDb.batch(initial.split(';').map(sql => sql.trim()).filter(Boolean).map(sql => legacyDb.prepare(sql)));
+      for (const [bus, declared, classification] of [
+        ['ACTIVE', 1, 'source-unavailable'], ['STOPPED', 0, 'source-unavailable'],
+        ['UNKNOWN', null, 'insufficient-data'], ['ACTIVE-WITHOUT-HISTORY', null, 'active-publishing'],
+      ] as const) {
+        await legacyDb.prepare(`INSERT INTO tracking_state
+          (source_key, bus_id, revision, last_check_id, evaluated_at, state_version, config_json, last_classification, prior_state_json)
+          VALUES ('legacy', ?, 2, ?, ?, 1, '{}', ?, '{}')`).bind(bus, bus, NOW, classification).run();
+        await legacyDb.prepare(`INSERT INTO tracking_observations
+          (check_id, source_key, bus_id, revision, evaluated_at, source_status, declared_active, summary_json, config_json)
+          VALUES (?, 'legacy', ?, 1, ?, 'ok', ?, '{}', '{}')`).bind(bus, bus, NOW - 1, declared).run();
+        await legacyDb.prepare(`INSERT INTO tracking_observations
+          (check_id, source_key, bus_id, revision, evaluated_at, source_status, summary_json, config_json)
+          VALUES (?, 'legacy', ?, 2, ?, 'unavailable', '{}', '{}')`).bind(`${bus}-latest`, bus, NOW).run();
+      }
+      const migration = await readFile(new NodeURL('../migrations/0002_tracking_incidents.sql', import.meta.url), 'utf8');
+      await legacyDb.batch(migration.split(';').map(sql => sql.trim()).filter(Boolean).map(sql => legacyDb.prepare(sql)));
+      const states = (await legacyDb.prepare('SELECT * FROM tracking_state ORDER BY bus_id').all()).results;
+      assert.deepEqual(states.map(row => [row.bus_id, row.monitoring_active]), [
+        ['ACTIVE', 1], ['ACTIVE-WITHOUT-HISTORY', 1], ['STOPPED', 0], ['UNKNOWN', 0],
+      ]);
+      assert.ok(states.every(row => row.revision === 2 && row.evaluated_at === NOW && row.prior_state_json === '{}'));
+      assert.equal((await legacyDb.prepare('SELECT * FROM tracking_observations').all()).results.length, 8);
+      assert.equal((await legacyDb.prepare('SELECT * FROM tracking_incidents').all()).results.length, 0);
+    } finally {
+      await legacy.dispose();
+    }
+  });
+
+  it('un error al crear incidente revierte snapshot, historial y poda', async () => {
+    await check(NOW - 8 * DAY);
+    const before = await snapshot();
+    await db.prepare("CREATE TRIGGER reject_incident BEFORE INSERT ON tracking_incidents BEGIN SELECT RAISE(ABORT, 'PRIVATE SQL'); END").run();
+    try {
+      await assert.rejects(check(NOW, payload(NOW - 240_000)), memoryFailure('memory-write-failed'));
+      assert.equal(await snapshot(), before);
+    } finally {
+      await db.prepare('DROP TRIGGER reject_incident').run();
+    }
+  });
+
+  it('un error al cerrar incidente revierte también la recuperación del evaluador', async () => {
+    await check(NOW, payload(NOW - 240_000));
+    await check(NOW + 60_000);
+    const before = await snapshot();
+    await db.prepare("CREATE TRIGGER reject_incident_update BEFORE UPDATE ON tracking_incidents BEGIN SELECT RAISE(ABORT, 'PRIVATE SQL'); END").run();
+    try {
+      await assert.rejects(check(NOW + 120_000), memoryFailure('memory-write-failed'));
+      assert.equal(await snapshot(), before);
+    } finally {
+      await db.prepare('DROP TRIGGER reject_incident_update').run();
+    }
+    await check(NOW + 120_000);
+    assert.equal((await rows('tracking_incidents'))[0].close_reason, 'publications-recovered');
   });
 });

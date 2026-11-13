@@ -1,5 +1,6 @@
 import type { PriorTrackingState, TrackingEvaluation, TrackingEvaluationConfig } from '../../src/domain/evaluateTracking.ts';
 import type { ReadResult, RtdbTarget } from './firebaseRtdb.ts';
+import { incidentStatements } from './trackingIncidents.ts';
 
 type MemoryErrorCode = 'memory-unavailable' | 'memory-read-failed' | 'memory-write-failed' |
   'memory-state-invalid' | 'memory-state-incompatible' | 'memory-conflict';
@@ -14,6 +15,7 @@ export interface TrackingSnapshot {
   lastCheckId: string;
   evaluatedAt: number;
   lastFreshSeenAt: number | null;
+  monitoringActive: boolean;
   prior: PriorTrackingState;
 }
 export interface CheckSummary {
@@ -84,12 +86,14 @@ export async function loadTrackingState(db: D1Database, key: TrackingKey, config
     if (row.state_version !== STATE_VERSION || row.config_json !== configJson(config)) throw new MemoryError('memory-state-incompatible');
     if (!Number.isSafeInteger(row.revision) || Number(row.revision) < 1 ||
       !Number.isSafeInteger(row.evaluated_at) || Number(row.evaluated_at) <= 0 ||
-      !nullableTimestamp(row.last_fresh_seen_at) || typeof row.last_check_id !== 'string' || !row.last_check_id) {
+      !nullableTimestamp(row.last_fresh_seen_at) || typeof row.last_check_id !== 'string' || !row.last_check_id ||
+      (row.monitoring_active !== 0 && row.monitoring_active !== 1)) {
       throw new MemoryError('memory-state-invalid');
     }
     return {
       revision: Number(row.revision), lastCheckId: row.last_check_id, evaluatedAt: Number(row.evaluated_at),
       lastFreshSeenAt: row.last_fresh_seen_at as number | null, prior: decodePrior(row.prior_state_json),
+      monitoringActive: row.monitoring_active === 1,
     };
   } catch (error) {
     if (error instanceof MemoryError) throw error;
@@ -106,15 +110,18 @@ export async function saveTrackingCheck(
   const checkId = crypto.randomUUID();
   const effectiveConfig = configJson(config);
   const lastFresh = evaluation.publication.state === 'fresh' ? evaluatedAt : previous?.lastFreshSeenAt ?? null;
+  // Ausencia de datos o fuente inaccesible no equivale a DETENER.
+  const monitoringActive = summary.source.status !== 'unavailable' && summary.input.isActive !== null
+    ? summary.input.isActive : previous?.monitoringActive ?? false;
   const values = [key.sourceKey, key.busId, revision, checkId, evaluatedAt, lastFresh,
-    STATE_VERSION, effectiveConfig, evaluation.classification, JSON.stringify(priorProjection(evaluation))];
+    STATE_VERSION, effectiveConfig, evaluation.classification, JSON.stringify(priorProjection(evaluation)), Number(monitoringActive)];
   try {
     const stateWrite = previous === null
       ? db.prepare(`INSERT INTO tracking_state
-          (source_key, bus_id, revision, last_check_id, evaluated_at, last_fresh_seen_at, state_version, config_json, last_classification, prior_state_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_key, bus_id) DO NOTHING`).bind(...values)
+          (source_key, bus_id, revision, last_check_id, evaluated_at, last_fresh_seen_at, state_version, config_json, last_classification, prior_state_json, monitoring_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_key, bus_id) DO NOTHING`).bind(...values)
       : db.prepare(`UPDATE tracking_state SET revision = ?, last_check_id = ?, evaluated_at = ?, last_fresh_seen_at = ?,
-          state_version = ?, config_json = ?, last_classification = ?, prior_state_json = ?
+          state_version = ?, config_json = ?, last_classification = ?, prior_state_json = ?, monitoring_active = ?
           WHERE source_key = ? AND bus_id = ? AND revision = ? AND last_check_id = ?
           AND state_version = ? AND config_json = ? AND evaluated_at <= ?`).bind(
           ...values.slice(2), key.sourceKey, key.busId, previous.revision, previous.lastCheckId,
@@ -132,7 +139,8 @@ export async function saveTrackingCheck(
         AND evaluated_at < ? AND check_id <> ? AND EXISTS (
           SELECT 1 FROM tracking_state WHERE source_key = ? AND bus_id = ? AND last_check_id = ? AND revision = ?)`)
       .bind(key.sourceKey, key.busId, evaluatedAt - RETENTION_MS, checkId, key.sourceKey, key.busId, checkId, revision);
-    const results = await db.batch([stateWrite, historyWrite, prune]);
+    const incidents = incidentStatements(db, key.sourceKey, key.busId, checkId, evaluatedAt, monitoringActive, evaluation, summary);
+    const results = await db.batch([stateWrite, historyWrite, prune, ...incidents]);
     if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) throw new MemoryError('memory-conflict');
     return { revision, checkId, reusedPrevious: previous !== null };
   } catch (error) {

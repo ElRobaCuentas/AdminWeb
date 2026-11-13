@@ -144,7 +144,7 @@ npm run watch:local   # dispara la comprobación programada cada minuto; Ctrl+C 
 
 La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local` y el modo operativo sigue sin ejecución programada. El diseño completo y el despliegue pendiente en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2).
 
-### API de lectura para Central (pendiente de consumo)
+### API de lectura para Central (pantalla `/pulso`)
 
 `GET /api/pulso` (`http://127.0.0.1:8787/api/pulso`) expone el último estado,
 la última comprobación y los incidentes guardados en D1, **sin ejecutar el
@@ -160,8 +160,21 @@ PULSO_ADMIN_RTDB_ORIGIN=       # https://burritounmsm-default-rtdb.firebaseio.co
 PULSO_ADMIN_RTDB_NAMESPACE=
 ```
 
-Sin esas variables la API falla cerrado (503). La pantalla de Central que la
-consuma sigue pendiente (ROADMAP).
+Sin esas variables la API falla cerrado (503). Central la consume en la ruta
+`/pulso` del menú lateral con la sesión de administrador existente: no hay
+segunda autenticación ni pantalla de login adicional. En desarrollo se ejecuta
+junto al Worker de arriba, desde la raíz de AdminWeb:
+
+```bash
+npm run emulators:pulso  # Auth 19099 + RTDB 19000 (proyecto demo-pulso-api)
+npm run dev:pulso        # Central en modo pulso-local; proxy /api/pulso al Worker del monitor
+```
+
+El modo `pulso-local` solo actúa en desarrollo y no carga el `.env` operativo;
+el proxy acepta únicamente orígenes HTTP de loopback (`PULSO_WORKER_ORIGIN`,
+por defecto `http://127.0.0.1:8787`). Pruebas de la pantalla y su integración
+local: `npm run test:pulso` y `npm run test:pulso:integration` (exigen los
+puertos 19000/19099/14400/14500 libres).
 
 ## Build y deploy
 

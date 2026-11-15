@@ -191,16 +191,17 @@ puertos 19000/19099/14400/14500 libres).
 `monitor/worker/wrangler.jsonc` incluye un entorno separado `production`
 (`name: pulso-monitor`, `workers_dev: true`, `preview_urls: false`) con D1
 `pulso-memory-production`, `PULSO_EXECUTION=cloudflare`, `PULSO_MEMORY=d1`,
-`PULSO_SCHEDULE_ENABLED=false` y `triggers.crons: []`. La ejecución remota exige
-configuración completa y falla cerrado: no consulta Firebase ni escribe en D1 si
-falta un valor. Con el interruptor apagado, el handler programado registra
-`schedule-disabled` y no evalúa.
+`PULSO_SCHEDULE_ENABLED=false` y `triggers.crons: []`. La D1 remota ya fue creada
+y migrada, y su UUID está configurado; el Worker no está desplegado. La ejecución
+remota exige configuración completa y falla cerrado: no consulta Firebase ni
+escribe en D1 si falta un valor. Con el interruptor apagado, el handler
+programado registra `schedule-disabled` y no evalúa.
 
-Valores pendientes de completar antes de desplegar:
+La D1 remota tiene aplicadas las migraciones `0001`/`0002` y sus tres tablas
+están vacías. Valores pendientes de completar antes de desplegar:
 
 | Valor | Ubicación | Nota |
 |-------|-----------|------|
-| UUID de D1 | `database_id` en `wrangler.jsonc` | Se obtiene al crear la base |
 | Origen de Central | `PULSO_CENTRAL_ORIGIN` | Origen HTTPS exacto, sin ruta |
 | Origen del Worker | `VITE_PULSO_API_ORIGIN` | Origen HTTPS para la build de Central |
 
@@ -211,12 +212,12 @@ continúa leyendo únicamente `SELECT` de D1. `/evaluate` sigue siendo
 exclusivamente local.
 
 `npx wrangler deploy --env production --dry-run` valida la configuración sin
-autenticar ni crear recursos. El orden previsto —crear D1, aplicar las
-migraciones `0001`/`0002`, completar valores, desplegar el Worker, verificar la
-API, publicar Central y activar interruptor y cron— está en la
+autenticar ni crear recursos. El orden previsto —crear D1 y aplicar las
+migraciones `0001`/`0002` (hecho), completar valores, desplegar el Worker,
+verificar la API, publicar Central y activar interruptor y cron— está en la
 [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md)
-(§3.2.1). Ningún paso remoto se ejecutó y las notificaciones externas siguen
-pospuestas.
+(§3.2.1). La D1 y sus migraciones ya se ejecutaron con autorización; el Worker no
+se desplegó y las notificaciones externas siguen pospuestas.
 
 ## Build y deploy
 

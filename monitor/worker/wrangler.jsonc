@@ -18,8 +18,7 @@
       "d1_databases": [{
         "binding": "PULSO_DB",
         "database_name": "pulso-memory-production",
-        // Pendiente: completar con el UUID devuelto al autorizar la creación de D1.
-        "database_id": "",
+        "database_id": "47e5664d-f9bd-435a-8f77-f4f8873c69cb",
         "migrations_dir": "migrations"
       }],
       "vars": {

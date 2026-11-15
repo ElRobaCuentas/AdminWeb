@@ -207,7 +207,7 @@ están vacías. Valores confirmados:
 | Valor | Ubicación | Nota |
 |-------|-----------|------|
 | Origen de Central | `PULSO_CENTRAL_ORIGIN` | `https://burritounmsm.web.app`, configurado |
-| Origen del Worker | `VITE_PULSO_API_ORIGIN` | `https://pulso-monitor.elburrito.workers.dev`, para la build de Central |
+| Origen del Worker | `VITE_PULSO_API_ORIGIN` | `https://pulso-monitor.elburrito.workers.dev`, usado por la build publicada |
 
 La API remota mantiene el contrato y la autorización por token de administrador;
 habilita CORS solo para el origen exacto de Central, responde `OPTIONS` 204 para
@@ -218,19 +218,33 @@ exclusivamente local.
 Comprobaciones HTTPS realizadas sobre la URL pública: `GET` sin token `401`,
 token malformado `401`, origen ajeno `403` sin CORS, preflight de Central `204`,
 preflights con `POST` o cabeceras extra `403`, `POST` `405` y `/evaluate` `403`
-incluso con cabecera local. No se envió ningún token de Firebase válido ni se
-consultó el Firebase operativo; las tres tablas D1 seguían vacías. La lectura
-autenticada con una sesión de administrador queda pendiente de la integración.
+incluso con cabecera local. Esas comprobaciones no usaron un token válido ni
+consultaron la ubicación operativa del bus; las tres tablas D1 seguían vacías.
+
+Central fue compilada con `VITE_PULSO_API_ORIGIN` —configurada manualmente en
+`.env`, sin leer ni modificar el archivo— y publicada con
+`firebase deploy --only hosting --project burritounmsm`: release
+`1794779471348000` (versión `1952a1f1e616bfa3`, `2026-11-15`), con la versión
+previa `004ca7b34e3d9821` como referencia de rollback. Los cuatro archivos
+publicados coinciden byte a byte con `dist/` y `/pulso` resuelve a `index.html`.
+El lint, las 20 pruebas de cliente y las 8 de integración local aprobaron; el
+build apunta a la API y al proyecto `burritounmsm`, sin marcadores de sandbox ni
+endpoints de emulador.
+
+La validación administrativa real se completó en producción: con una cuenta
+administrativa habitual, PULSO mostró «Sin registros de PULSO» y «Todavía no hay
+comprobaciones guardadas para el bus AHK-459», sin errores de acceso ni de
+conectividad; las tres tablas D1 siguieron vacías. No se solicitaron ni
+registraron contraseñas o tokens. Las notificaciones externas siguen pospuestas.
 
 `npx wrangler deploy --env production --dry-run` valida la configuración sin
 autenticar ni crear recursos. El orden previsto —crear D1 y aplicar las
-migraciones `0001`/`0002` (hecho), completar valores (hecho), desplegar el Worker
-(hecho), verificar la API, publicar Central y activar interruptor y cron— está en
-la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md)
-(§3.2.1). La D1, las migraciones y el despliegue ya se ejecutaron con
-autorización; la verificación autenticada, la publicación de Central y la
-activación de la vigilancia siguen pendientes, y las notificaciones externas
-siguen pospuestas.
+migraciones `0001`/`0002`, completar valores, desplegar el Worker, verificar la
+API, publicar Central y activar interruptor y cron— está en la
+[arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md)
+(§3.2.1). La D1, las migraciones, el despliegue y la publicación ya se
+ejecutaron con autorización, y la lectura autenticada quedó validada. Solo la
+activación de la vigilancia sigue pendiente.
 
 ## Build y deploy
 
@@ -240,7 +254,7 @@ npm run preview        # preview local de la build
 firebase deploy        # solo tras verificar el proyecto de destino en Firebase CLI
 ```
 
-La configuración de Firebase Hosting (`firebase.json`) sirve desde `dist/` con rewrites SPA y cache de assets. Confirmar el proyecto seleccionado antes de desplegar; este README no certifica el estado publicado.
+La configuración de Firebase Hosting (`firebase.json`) sirve desde `dist/` con rewrites SPA y cache de assets. Confirmar el proyecto seleccionado antes de desplegar; el release publicado y su validación están registrados arriba, y Firebase Console sigue siendo la fuente autoritativa del historial de versiones.
 
 ## Linting
 

@@ -13,8 +13,8 @@
       "name": "pulso-monitor",
       "workers_dev": true,
       "preview_urls": false,
-      // Al autorizar la vigilancia: ["* * * * *"] (un minuto). Ahora no hay cron.
-      "triggers": { "crons": [] },
+      // Vigilancia autorizada cada minuto para el bus configurado.
+      "triggers": { "crons": ["* * * * *"] },
       "d1_databases": [{
         "binding": "PULSO_DB",
         "database_name": "pulso-memory-production",
@@ -25,7 +25,7 @@
         "PULSO_EXECUTION": "cloudflare",
         "PULSO_LOCAL_ONLY": "false",
         "PULSO_MEMORY": "d1",
-        "PULSO_SCHEDULE_ENABLED": "false",
+        "PULSO_SCHEDULE_ENABLED": "true",
         "PULSO_CENTRAL_ORIGIN": "https://burritounmsm.web.app",
         "RTDB_MODE": "operative-public",
         "RTDB_ORIGIN": "https://burritounmsm-default-rtdb.firebaseio.com",

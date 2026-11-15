@@ -180,6 +180,13 @@ npm run emulators:pulso  # Auth 19099 + RTDB 19000 (proyecto demo-pulso-api)
 npm run dev:pulso        # Central en modo pulso-local; proxy /api/pulso al Worker del monitor
 ```
 
+La pantalla consulta al entrar y cada 60 segundos mientras permanece montada; el
+botón Actualizar lanza la misma consulta, sin solapamientos. Al salir se cancela
+la consulta pendiente y se limpian los temporizadores. Un fallo conserva los
+últimos datos con su antigüedad y avisa de que no se pudo confirmar si hay
+comprobaciones nuevas; una denegación los retira. La advertencia de datos
+antiguos se mantiene y el refresco no rejuvenece la comprobación.
+
 El modo `pulso-local` solo actúa en desarrollo y no carga el `.env` operativo;
 el proxy acepta únicamente orígenes HTTP de loopback (`PULSO_WORKER_ORIGIN`,
 por defecto `http://127.0.0.1:8787`). Pruebas de la pantalla y su integración
@@ -223,13 +230,17 @@ consultaron la ubicación operativa del bus; las tres tablas D1 seguían vacías
 
 Central fue compilada con `VITE_PULSO_API_ORIGIN` —configurada manualmente en
 `.env`, sin leer ni modificar el archivo— y publicada con
-`firebase deploy --only hosting --project burritounmsm`: release
-`1794779471348000` (versión `1952a1f1e616bfa3`, `2026-11-15`), con la versión
-previa `004ca7b34e3d9821` como referencia de rollback. Los cuatro archivos
-publicados coinciden byte a byte con `dist/` y `/pulso` resuelve a `index.html`.
-El lint, las 20 pruebas de cliente y las 8 de integración local aprobaron; el
-build apunta a la API y al proyecto `burritounmsm`, sin marcadores de sandbox ni
-endpoints de emulador.
+`firebase deploy --only hosting --project burritounmsm`. La primera publicación
+quedó en release `1794779471348000` (versión `1952a1f1e616bfa3`, `2026-11-15`),
+con la versión previa `004ca7b34e3d9821` como referencia de rollback; aprobaron
+el lint y las 20 pruebas de cliente. Después se publicó el refresco automático:
+release `1794782963690000` (versión `3b69ad434e3d33d7`,
+`2026-11-15T22:49:23.690Z`), con `1952a1f1e616bfa3` como rollback, tras aprobar
+el lint, las 26 pruebas de cliente y las 8 de integración local. En ambas, los
+archivos publicados coinciden byte a byte con `dist/` y `/pulso` resuelve a
+`index.html`; el build apunta a la API y al proyecto `burritounmsm`, sin
+marcadores de sandbox ni endpoints de emulador. La comprobación manual del
+refresco con una sesión administrativa real en producción queda pendiente.
 
 La validación administrativa real se completó en producción: con una cuenta
 administrativa habitual, PULSO mostró «Sin registros de PULSO» y «Todavía no hay

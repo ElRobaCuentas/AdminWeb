@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { firebaseAuth } from '../../../shared/config/firebase';
 import { Card, CardHeader } from '../../../shared/ui/Card';
 import { Button } from '../../../shared/ui/Button';
@@ -11,7 +11,7 @@ import { checkAge, closeLabels, formatDuration, formatMoment, incidentLabels, st
 import '../pulso.css';
 
 type View = { status: 'loading' } | { status: 'error'; error: PulsoQueryError } |
-  { status: 'ready'; data: PulsoData; receivedAt: number };
+  { status: 'ready'; data: PulsoData; receivedAt: number; error?: PulsoQueryError };
 
 function IncidentList({ incidents }: { incidents: Incident[] }) {
   return <ul className="registry">
@@ -32,23 +32,42 @@ function IncidentList({ incidents }: { incidents: Incident[] }) {
 
 export function PulsoScreen() {
   const [view, setView] = useState<View>({ status: 'loading' });
-  const [refresh, setRefresh] = useState(0);
+  const refresh = useRef<() => void>(() => {});
+  const [refreshing, setRefreshing] = useState(true);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const controller = new AbortController();
-    setView({ status: 'loading' });
-    void getPulso(() => firebaseAuth.currentUser?.getIdToken() ?? Promise.resolve(null), controller.signal)
-      .then(data => {
-        if (!controller.signal.aborted) {
-          const receivedAt = Date.now();
-          setNow(receivedAt);
-          setView({ status: 'ready', data, receivedAt });
-        }
-      }).catch((error: PulsoQueryError) => {
-        if (!controller.signal.aborted) setView({ status: 'error', error });
-      });
-    return () => controller.abort();
-  }, [refresh]);
+    let inFlight = false;
+    const load = () => {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      setRefreshing(true);
+      void getPulso(() => firebaseAuth.currentUser?.getIdToken() ?? Promise.resolve(null), controller.signal)
+        .then(data => {
+          if (!controller.signal.aborted) {
+            const receivedAt = Date.now();
+            setNow(receivedAt);
+            setView({ status: 'ready', data, receivedAt });
+          }
+        }).catch((error: PulsoQueryError) => {
+          if (!controller.signal.aborted) {
+            // Conservar el último resultado y su reloj, pero no datos tras una denegación.
+            setView(previous => previous.status === 'ready' && !error.denied
+              ? { ...previous, error } : { status: 'error', error });
+          }
+        }).finally(() => {
+          inFlight = false;
+          if (!controller.signal.aborted) setRefreshing(false);
+        });
+    };
+    refresh.current = load;
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, []);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -58,19 +77,22 @@ export function PulsoScreen() {
   const state = data?.observedState;
   const check = data?.lastCheck;
   const age = check && view.status === 'ready' ? checkAge(check, view.receivedAt, now) : null;
+  const error = view.status === 'loading' ? null : view.error;
   return <div className="pulso-screen">
     <div className="pulso-toolbar">
       <p className="text-muted">Estado e incidentes registrados por PULSO. Actualizar solo consulta los registros; no ejecuta una evaluación.</p>
-      <Button type="button" variant="secondary" disabled={view.status === 'loading'}
-        onClick={() => setRefresh(value => value + 1)} icon={<Icon name="clock" size={16} />}>
-        {view.status === 'loading' ? 'Consultando…' : 'Actualizar'}
+      <Button type="button" variant="secondary" disabled={refreshing}
+        onClick={() => refresh.current()} icon={<Icon name="clock" size={16} />}>
+        {refreshing ? 'Consultando…' : 'Actualizar'}
       </Button>
     </div>
-    <div aria-live="polite" aria-busy={view.status === 'loading'}>
+    <div aria-live="polite" aria-busy={refreshing}>
       {view.status === 'loading' ? <div className="pulso-loading"><Spinner /><p>Cargando PULSO…</p></div> : null}
-      {view.status === 'error' ? <div role="alert"><EmptyState
-        icon={<Icon name={view.error.denied ? 'shieldOff' : 'alert'} />}
-        title={view.error.denied ? 'Acceso denegado' : 'Error de consulta'} hint={view.error.message} /></div> : null}
+      {error ? <div role="alert"><EmptyState
+        icon={<Icon name={error.denied ? 'shieldOff' : 'alert'} />}
+        title={error.denied ? 'Acceso denegado' : 'Error de consulta'} hint={error.message} />
+        {data ? <p className="pulso-notice">Se muestran los últimos registros consultados; no se pudo confirmar si hay comprobaciones nuevas.</p> : null}
+      </div> : null}
       {data?.status === 'no-data' ? <Card><EmptyState title="Sin registros de PULSO"
         hint={`Todavía no hay comprobaciones guardadas para el bus ${data.busId}. Actualizar no genera comprobaciones.`} /></Card> : null}
     </div>
@@ -89,7 +111,7 @@ export function PulsoScreen() {
           </div>
         </Card>
         <Card><CardHeader title="Última comprobación de PULSO" />
-          <div className="card-body"><Badge tone={age.old ? 'warning' : 'info'}>{age.old ? 'Datos antiguos' : 'Comprobación reciente'}</Badge>
+          <div className="card-body"><Badge tone={age.old || error ? 'warning' : 'info'}>{age.old ? 'Datos antiguos' : error ? 'Última comprobación guardada' : 'Comprobación reciente'}</Badge>
             <dl className="pulso-details">
               <dt>Fecha y hora (Lima)</dt><dd>{formatMoment(check.evaluatedAt)}</dd>
               <dt>Antigüedad</dt><dd>{formatDuration(age.ageMs)}</dd>

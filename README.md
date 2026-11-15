@@ -142,7 +142,7 @@ npm run dev
 El puerto predeterminado del dev server es `http://localhost:5173`; consultar
 la URL que imprima Vite si ese puerto está ocupado.
 
-## Monitor PULSO (local y preparación remota)
+## Monitor PULSO (local y despliegue remoto)
 
 El monitor de seguimiento vive en `monitor/` y se ejecuta aparte del panel:
 
@@ -152,7 +152,7 @@ npm run dev           # Wrangler en http://127.0.0.1:8787 (comprobación manual 
 npm run watch:local   # dispara la comprobación programada cada minuto; Ctrl+C la detiene
 ```
 
-La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local` y el modo operativo sigue sin ejecución programada. El diseño completo y el despliegue pendiente en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2 y §3.2.1).
+La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local`, mientras el Worker desplegado en `production` sigue sin ejecución programada. El diseño completo y el estado del despliegue en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2 y §3.2.1).
 
 ### API de lectura para Central (pantalla `/pulso`)
 
@@ -186,24 +186,28 @@ por defecto `http://127.0.0.1:8787`). Pruebas de la pantalla y su integración
 local: `npm run test:pulso` y `npm run test:pulso:integration` (exigen los
 puertos 19000/19099/14400/14500 libres).
 
-### Entorno `production` preparado (sin desplegar)
+### Entorno `production` desplegado (sin vigilancia)
 
 `monitor/worker/wrangler.jsonc` incluye un entorno separado `production`
 (`name: pulso-monitor`, `workers_dev: true`, `preview_urls: false`) con D1
 `pulso-memory-production`, `PULSO_EXECUTION=cloudflare`, `PULSO_MEMORY=d1`,
-`PULSO_SCHEDULE_ENABLED=false` y `triggers.crons: []`. La D1 remota ya fue creada
-y migrada, y su UUID está configurado; el Worker no está desplegado. La ejecución
-remota exige configuración completa y falla cerrado: no consulta Firebase ni
-escribe en D1 si falta un valor. Con el interruptor apagado, el handler
-programado registra `schedule-disabled` y no evalúa.
+`PULSO_SCHEDULE_ENABLED=false` y `triggers.crons: []`. La D1 remota está creada y
+migrada, y su UUID está configurado.
+
+El Worker fue desplegado en **`https://pulso-monitor.elburrito.workers.dev`** y
+sirve `GET /api/pulso`. La API de Cloudflare confirmó el binding `PULSO_DB`, el
+interruptor apagado, el origen de Central configurado y `triggers.crons` vacío.
+La ejecución remota exige configuración completa y falla cerrado: no consulta
+Firebase ni escribe en D1 si falta un valor. Con el interruptor apagado, el
+handler programado registra `schedule-disabled` y no evalúa.
 
 La D1 remota tiene aplicadas las migraciones `0001`/`0002` y sus tres tablas
-están vacías. Valores pendientes de completar antes de desplegar:
+están vacías. Valores confirmados:
 
 | Valor | Ubicación | Nota |
 |-------|-----------|------|
-| Origen de Central | `PULSO_CENTRAL_ORIGIN` | Origen HTTPS exacto, sin ruta |
-| Origen del Worker | `VITE_PULSO_API_ORIGIN` | Origen HTTPS para la build de Central |
+| Origen de Central | `PULSO_CENTRAL_ORIGIN` | `https://burritounmsm.web.app`, configurado |
+| Origen del Worker | `VITE_PULSO_API_ORIGIN` | `https://pulso-monitor.elburrito.workers.dev`, para la build de Central |
 
 La API remota mantiene el contrato y la autorización por token de administrador;
 habilita CORS solo para el origen exacto de Central, responde `OPTIONS` 204 para
@@ -211,13 +215,22 @@ habilita CORS solo para el origen exacto de Central, responde `OPTIONS` 204 para
 continúa leyendo únicamente `SELECT` de D1. `/evaluate` sigue siendo
 exclusivamente local.
 
+Comprobaciones HTTPS realizadas sobre la URL pública: `GET` sin token `401`,
+token malformado `401`, origen ajeno `403` sin CORS, preflight de Central `204`,
+preflights con `POST` o cabeceras extra `403`, `POST` `405` y `/evaluate` `403`
+incluso con cabecera local. No se envió ningún token de Firebase válido ni se
+consultó el Firebase operativo; las tres tablas D1 seguían vacías. La lectura
+autenticada con una sesión de administrador queda pendiente de la integración.
+
 `npx wrangler deploy --env production --dry-run` valida la configuración sin
 autenticar ni crear recursos. El orden previsto —crear D1 y aplicar las
-migraciones `0001`/`0002` (hecho), completar valores, desplegar el Worker,
-verificar la API, publicar Central y activar interruptor y cron— está en la
-[arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md)
-(§3.2.1). La D1 y sus migraciones ya se ejecutaron con autorización; el Worker no
-se desplegó y las notificaciones externas siguen pospuestas.
+migraciones `0001`/`0002` (hecho), completar valores (hecho), desplegar el Worker
+(hecho), verificar la API, publicar Central y activar interruptor y cron— está en
+la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md)
+(§3.2.1). La D1, las migraciones y el despliegue ya se ejecutaron con
+autorización; la verificación autenticada, la publicación de Central y la
+activación de la vigilancia siguen pendientes, y las notificaciones externas
+siguen pospuestas.
 
 ## Build y deploy
 

@@ -1,19 +1,11 @@
 import { PulsoApiError, requireAdministrator } from './adminAuthorization.ts';
-import type { AdminAuthorizationEnv } from './adminAuthorization.ts';
 import { getRtdbMode, isLoopback, validateTarget } from './firebaseRtdb.ts';
 import type { HttpFetch } from './firebaseRtdb.ts';
 import { keyForTarget } from './trackingStore.ts';
+import { centralOrigin, executionMode, validateRemoteConfiguration } from './executionConfig.ts';
+import type { ExecutionEnv } from './executionConfig.ts';
 
-export interface PulsoReadEnv extends AdminAuthorizationEnv {
-  PULSO_LOCAL_ONLY?: string;
-  PULSO_MEMORY?: string;
-  PULSO_DB?: D1Database;
-  RTDB_MODE?: string;
-  RTDB_ORIGIN?: string;
-  RTDB_NAMESPACE?: string;
-  BUS_ID?: string;
-  PUBLICATION_STALE_AFTER_MS?: string;
-}
+export type PulsoReadEnv = ExecutionEnv;
 
 const classifications = ['source-unavailable', 'insufficient-data', 'active-publishing', 'active-publication-stale',
   'inactive-finalized', 'inactive-unconfirmed', 'recovering-pending', 'recovering-confirmed'];
@@ -37,7 +29,8 @@ async function readPersisted(env: PulsoReadEnv, now: number) {
     namespace: env.RTDB_NAMESPACE ?? '', busId: env.BUS_ID ?? '' };
   try { validateTarget(target); } catch { throw new PulsoApiError('read-not-configured', 503); }
   const staleAfterMs = Number(env.PUBLICATION_STALE_AFTER_MS);
-  if (env.PULSO_MEMORY !== 'd1-local' || !env.PULSO_DB || !Number.isSafeInteger(staleAfterMs) || staleAfterMs < 1) {
+  const memoryMode = executionMode(env) === 'cloudflare' ? 'd1' : 'd1-local';
+  if (env.PULSO_MEMORY !== memoryMode || !env.PULSO_DB || !Number.isSafeInteger(staleAfterMs) || staleAfterMs < 1) {
     throw new PulsoApiError('read-not-configured', 503);
   }
   const key = keyForTarget(target);
@@ -88,18 +81,36 @@ async function readPersisted(env: PulsoReadEnv, now: number) {
 
 export async function handlePulsoRead(
   request: Request, env: PulsoReadEnv, dependencies: { fetchImpl?: HttpFetch; now?: () => number } = {},
-): Promise<{ body: unknown; status: number }> {
+): Promise<{ body: unknown; status: number; headers?: Record<string, string> }> {
   const url = new URL(request.url);
-  if (env.PULSO_LOCAL_ONLY !== 'true' || url.protocol !== 'http:' || !isLoopback(url.hostname) ||
-    (request.headers.has('Origin') && request.headers.get('Origin') !== url.origin) ||
-    request.headers.get('Sec-Fetch-Site') === 'cross-site') return { body: { error: 'local-only' }, status: 403 };
-  if (request.method !== 'GET') return { body: { error: 'method-not-allowed' }, status: 405 };
-  if (url.search) return { body: { error: 'query-not-allowed' }, status: 400 };
+  let headers: Record<string, string> | undefined;
+  const result = (body: unknown, status: number) => ({ body, status, ...(headers ? { headers } : {}) });
   try {
+    if (executionMode(env) === 'cloudflare') {
+      const allowed = centralOrigin(env);
+      const origin = request.headers.get('Origin');
+      if (url.protocol !== 'https:' || isLoopback(url.hostname)) return result({ error: 'remote-only' }, 403);
+      if (origin !== null && origin !== allowed) return result({ error: 'access-denied' }, 403);
+      if (origin === allowed) headers = { 'Access-Control-Allow-Origin': allowed, Vary: 'Origin' };
+      validateRemoteConfiguration(env);
+      if (url.search) return result({ error: 'query-not-allowed' }, 400);
+      if (request.method === 'OPTIONS') {
+        if (origin !== allowed || request.headers.get('Access-Control-Request-Method') !== 'GET' ||
+          request.headers.get('Access-Control-Request-Headers')?.trim().toLowerCase() !== 'authorization') {
+          return result({ error: 'access-denied' }, 403);
+        }
+        return { body: null, status: 204, headers: { ...headers,
+          'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': 'Authorization' } };
+      }
+    } else if (env.PULSO_LOCAL_ONLY !== 'true' || url.protocol !== 'http:' || !isLoopback(url.hostname) ||
+      (request.headers.has('Origin') && request.headers.get('Origin') !== url.origin) ||
+      request.headers.get('Sec-Fetch-Site') === 'cross-site') return result({ error: 'local-only' }, 403);
+    if (request.method !== 'GET') return result({ error: 'method-not-allowed' }, 405);
+    if (url.search) return result({ error: 'query-not-allowed' }, 400);
     await requireAdministrator(request, env, dependencies.fetchImpl, (dependencies.now ?? Date.now)());
-    return { body: await readPersisted(env, (dependencies.now ?? Date.now)()), status: 200 };
+    return result(await readPersisted(env, (dependencies.now ?? Date.now)()), 200);
   } catch (error) {
-    return { body: { error: error instanceof PulsoApiError ? error.message : 'read-not-configured' },
-      status: error instanceof PulsoApiError ? error.status : 503 };
+    return result({ error: error instanceof PulsoApiError ? error.message : 'read-not-configured' },
+      error instanceof PulsoApiError ? error.status : 503);
   }
 }

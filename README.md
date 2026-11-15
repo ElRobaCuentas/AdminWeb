@@ -117,9 +117,19 @@ VITE_FIREBASE_AUTH_DOMAIN=
 VITE_FIREBASE_DATABASE_URL=
 VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_APP_ID=
+VITE_PULSO_API_ORIGIN=
 ```
 
-Al iniciar, `shared/config/env.ts` valida que las cinco variables existan. Si falta alguna, la app falla de inmediato con un mensaje que indica cuáles faltan (sin imprimir valores). Las variables `VITE_*` forman parte del bundle cliente: no son secretos.
+Al iniciar, `shared/config/env.ts` valida que las cinco variables de Firebase
+existan. Si falta alguna, la app falla de inmediato con un mensaje que indica
+cuáles faltan (sin imprimir valores). Las variables `VITE_*` forman parte del
+bundle cliente: no son secretos.
+
+`VITE_PULSO_API_ORIGIN` es opcional en local: sin ella, PULSO sigue usando el
+proxy `/api/pulso`. En una build de producción sí es necesaria para que la
+pantalla alcance el Worker remoto; debe ser un origen HTTPS sin ruta, query ni
+credenciales (el cliente añade `/api/pulso`). Su ausencia no impide iniciar el
+panel: el error aparece solo al abrir `/pulso`.
 
 ## Desarrollo
 
@@ -132,7 +142,7 @@ npm run dev
 El puerto predeterminado del dev server es `http://localhost:5173`; consultar
 la URL que imprima Vite si ese puerto está ocupado.
 
-## Monitor PULSO (local)
+## Monitor PULSO (local y preparación remota)
 
 El monitor de seguimiento vive en `monitor/` y se ejecuta aparte del panel:
 
@@ -142,7 +152,7 @@ npm run dev           # Wrangler en http://127.0.0.1:8787 (comprobación manual 
 npm run watch:local   # dispara la comprobación programada cada minuto; Ctrl+C la detiene
 ```
 
-La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local` y el modo operativo sigue sin ejecución programada. El diseño completo y el despliegue pendiente en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2).
+La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local` y el modo operativo sigue sin ejecución programada. El diseño completo y el despliegue pendiente en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2 y §3.2.1).
 
 ### API de lectura para Central (pantalla `/pulso`)
 
@@ -175,6 +185,38 @@ el proxy acepta únicamente orígenes HTTP de loopback (`PULSO_WORKER_ORIGIN`,
 por defecto `http://127.0.0.1:8787`). Pruebas de la pantalla y su integración
 local: `npm run test:pulso` y `npm run test:pulso:integration` (exigen los
 puertos 19000/19099/14400/14500 libres).
+
+### Entorno `production` preparado (sin desplegar)
+
+`monitor/worker/wrangler.jsonc` incluye un entorno separado `production`
+(`name: pulso-monitor`, `workers_dev: true`, `preview_urls: false`) con D1
+`pulso-memory-production`, `PULSO_EXECUTION=cloudflare`, `PULSO_MEMORY=d1`,
+`PULSO_SCHEDULE_ENABLED=false` y `triggers.crons: []`. La ejecución remota exige
+configuración completa y falla cerrado: no consulta Firebase ni escribe en D1 si
+falta un valor. Con el interruptor apagado, el handler programado registra
+`schedule-disabled` y no evalúa.
+
+Valores pendientes de completar antes de desplegar:
+
+| Valor | Ubicación | Nota |
+|-------|-----------|------|
+| UUID de D1 | `database_id` en `wrangler.jsonc` | Se obtiene al crear la base |
+| Origen de Central | `PULSO_CENTRAL_ORIGIN` | Origen HTTPS exacto, sin ruta |
+| Origen del Worker | `VITE_PULSO_API_ORIGIN` | Origen HTTPS para la build de Central |
+
+La API remota mantiene el contrato y la autorización por token de administrador;
+habilita CORS solo para el origen exacto de Central, responde `OPTIONS` 204 para
+`GET` + `Authorization`, rechaza peticiones de navegador con otro origen y
+continúa leyendo únicamente `SELECT` de D1. `/evaluate` sigue siendo
+exclusivamente local.
+
+`npx wrangler deploy --env production --dry-run` valida la configuración sin
+autenticar ni crear recursos. El orden previsto —crear D1, aplicar las
+migraciones `0001`/`0002`, completar valores, desplegar el Worker, verificar la
+API, publicar Central y activar interruptor y cron— está en la
+[arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md)
+(§3.2.1). Ningún paso remoto se ejecutó y las notificaciones externas siguen
+pospuestas.
 
 ## Build y deploy
 

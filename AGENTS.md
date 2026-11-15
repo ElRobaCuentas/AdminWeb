@@ -112,11 +112,13 @@ Validá con `shared/utils/dni.ts` (`isValidDni` / `normalizeDni`) tanto en
 pantallas como en servicios (`createChofer`, `createAdmin`) antes de operar. Los
 inputs solo aceptan dígitos (`sanitizeDniInput`) y usan `maxLength={8}`.
 
-### 5.6 Variables de entorno validadas al iniciar
+### 5.6 Variables de entorno
 
-`shared/config/env.ts` exige las cinco `VITE_FIREBASE_*` antes de inicializar. Si
-agregás una variable, sumala ahí y al `.env.example`. No leas ni muestres el
-`.env` local (protegido en la raíz).
+`shared/config/env.ts` exige las cinco `VITE_FIREBASE_*` antes de inicializar. La
+variable opcional `VITE_PULSO_API_ORIGIN` se valida solo al abrir `/pulso`: debe
+ser un origen HTTPS sin ruta ni credenciales, y en local puede omitirse porque se
+usa el proxy `/api/pulso`. Si agregás una variable, sumala ahí y al
+`.env.example`. No leas ni muestres el `.env` local (protegido en la raíz).
 
 ### 5.7 Asignaciones
 

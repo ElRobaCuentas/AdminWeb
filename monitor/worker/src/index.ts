@@ -5,21 +5,11 @@ import { toTrackingObservation } from './toTrackingObservation.ts';
 import { keyForTarget, loadTrackingState, MemoryError, saveTrackingCheck } from './trackingStore.ts';
 import type { CheckSummary } from './trackingStore.ts';
 import { handlePulsoRead } from './pulsoRead.ts';
-import type { AdminAuthorizationEnv } from './adminAuthorization.ts';
+import { ExecutionError, executionMode, validateRemoteConfiguration } from './executionConfig.ts';
+import type { ExecutionEnv } from './executionConfig.ts';
 
-export interface Env extends AdminAuthorizationEnv {
-  PULSO_LOCAL_ONLY?: string;
-  PULSO_MEMORY?: string;
-  PULSO_DB?: D1Database;
-  RTDB_MODE?: string;
-  RTDB_ORIGIN?: string;
-  RTDB_NAMESPACE?: string;
-  BUS_ID?: string;
+export interface Env extends ExecutionEnv {
   FIREBASE_ID_TOKEN?: string;
-  PUBLICATION_STALE_AFTER_MS?: string;
-  RECOVERY_CONFIRMATIONS_REQUIRED?: string;
-  MAX_FUTURE_SKEW_MS?: string;
-  READ_TIMEOUT_MS?: string;
 }
 
 interface Dependencies {
@@ -45,7 +35,11 @@ function integer(value: string | undefined, minimum: number, maximum = Number.MA
 }
 
 export async function readAndEvaluate(env: Env, dependencies: Dependencies = {}): Promise<TrackingDiagnostic> {
-  if (env.PULSO_LOCAL_ONLY !== 'true') throw new Error('Invalid local execution mode');
+  const remote = executionMode(env) === 'cloudflare';
+  if (remote) {
+    validateRemoteConfiguration(env);
+    if (env.PULSO_SCHEDULE_ENABLED !== 'true') throw new ExecutionError('schedule-disabled');
+  } else if (env.PULSO_LOCAL_ONLY !== 'true') throw new Error('Invalid local execution mode');
   const mode = getRtdbMode(env.RTDB_MODE);
   const target = { mode, origin: env.RTDB_ORIGIN ?? '', namespace: env.RTDB_NAMESPACE ?? '', busId: env.BUS_ID ?? '' };
   validateTarget(target);
@@ -56,8 +50,8 @@ export async function readAndEvaluate(env: Env, dependencies: Dependencies = {})
   };
   const timeout = integer(env.READ_TIMEOUT_MS, 1, 30_000);
   const memoryMode = env.PULSO_MEMORY ?? 'off';
-  if (memoryMode !== 'off' && memoryMode !== 'd1-local') throw new Error('Invalid local memory mode');
-  const database = memoryMode === 'd1-local' ? env.PULSO_DB : undefined;
+  if (!remote && memoryMode !== 'off' && memoryMode !== 'd1-local') throw new Error('Invalid local memory mode');
+  const database = remote || memoryMode === 'd1-local' ? env.PULSO_DB : undefined;
   if (memoryMode === 'd1-local' && !database) throw new MemoryError('memory-unavailable');
   const key = keyForTarget(target);
   // Tomar la revisión ANTES del HTTP: una comprobación lenta no debe pisar otra aceptada.
@@ -96,18 +90,21 @@ export async function readAndEvaluate(env: Env, dependencies: Dependencies = {})
 }
 
 export async function runScheduledCheck(env: Env, dependencies: Dependencies = {}): Promise<TrackingDiagnostic> {
-  // Esta etapa programa únicamente el simulador local; el destino operativo sigue siendo manual.
-  if (getRtdbMode(env.RTDB_MODE) === 'operative-public') throw new Error('operative-manual-only');
-  // Sin memoria no se pueden conservar vigilancia, recuperación ni incidentes entre minutos.
-  if (env.PULSO_MEMORY !== 'd1-local') throw new MemoryError('memory-unavailable');
+  if (executionMode(env) === 'local') {
+    if (getRtdbMode(env.RTDB_MODE) === 'operative-public') throw new Error('operative-manual-only');
+    // Sin memoria no se pueden conservar vigilancia, recuperación ni incidentes entre minutos.
+    if (env.PULSO_MEMORY !== 'd1-local') throw new MemoryError('memory-unavailable');
+  }
   return readAndEvaluate(env, dependencies);
 }
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: {
+function json(body: unknown, status = 200, cors?: HeadersInit): Response {
+  const headers = new Headers({
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
-  } });
+  });
+  new Headers(cors).forEach((value, key) => headers.set(key, value));
+  return status === 204 ? new Response(null, { status, headers }) : Response.json(body, { status, headers });
 }
 
 export default {
@@ -115,9 +112,10 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/pulso') {
       const result = await handlePulsoRead(request, env);
-      return json(result.body, result.status);
+      return json(result.body, result.status, result.headers);
     }
-    if (env.PULSO_LOCAL_ONLY !== 'true' || url.protocol !== 'http:' || !isLoopback(url.hostname) ||
+    if ((env.PULSO_EXECUTION !== undefined && env.PULSO_EXECUTION !== 'local') ||
+      env.PULSO_LOCAL_ONLY !== 'true' || url.protocol !== 'http:' || !isLoopback(url.hostname) ||
       request.headers.get('X-Pulso-Local') !== '1' ||
       (request.headers.has('Origin') && request.headers.get('Origin') !== url.origin) ||
       request.headers.get('Sec-Fetch-Site') === 'cross-site') return json({ error: 'local-only' }, 403);
@@ -136,8 +134,13 @@ export default {
     try {
       console.log(JSON.stringify(await runScheduledCheck(env)));
     } catch (error) {
+      if (error instanceof ExecutionError && error.message === 'schedule-disabled') {
+        console.log(JSON.stringify({ status: 'schedule-disabled' }));
+        return;
+      }
       const code = error instanceof MemoryError ? error.code :
-        error instanceof Error && error.message === 'operative-manual-only' ? 'operative-manual-only' : 'invalid-local-configuration';
+        error instanceof ExecutionError ? error.message :
+          error instanceof Error && error.message === 'operative-manual-only' ? 'operative-manual-only' : 'invalid-local-configuration';
       console.error(JSON.stringify({ error: code }));
       // Distinguir una ejecución fallida de una caída de fuente guardada correctamente.
       throw new Error(code);

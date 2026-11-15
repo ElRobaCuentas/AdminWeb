@@ -12,7 +12,7 @@ export class PulsoApiError extends Error {
   constructor(code: string, status: number) { super(code); this.status = status; }
 }
 
-function authorizationTarget(env: AdminAuthorizationEnv): { origin: string; namespace: string; project: string; local: boolean } {
+export function authorizationTarget(env: AdminAuthorizationEnv): { origin: string; namespace: string; project: string; local: boolean } {
   const project = env.PULSO_ADMIN_PROJECT_ID ?? '';
   const namespace = env.PULSO_ADMIN_RTDB_NAMESPACE ?? '';
   try {

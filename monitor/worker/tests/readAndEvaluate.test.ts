@@ -201,7 +201,8 @@ describe('fronteras de seguridad e instalación aislada', () => {
   it('mantiene dependencias de desarrollo y cron solo en el entorno local con memoria', async () => {
     const { readFile } = await import('node:fs/promises');
     const { URL: NodeURL } = await import('node:url');
-    const load = async (path: string) => JSON.parse(await readFile(new NodeURL(path, import.meta.url), 'utf8'));
+    const load = async (path: string) => JSON.parse((await readFile(new NodeURL(path, import.meta.url), 'utf8'))
+      .replace(/^\s*\/\/.*$/gm, ''));
     const pkg = await load('../package.json');
     const lock = await load('../package-lock.json');
     const config = await load('../wrangler.jsonc');
@@ -353,7 +354,8 @@ describe('lectura operativa pública explícita, sin red real', () => {
   it('la configuración operativa queda incompleta sin bus y no activa rutas públicas', async () => {
     const { readFile } = await import('node:fs/promises');
     const { URL: NodeURL } = await import('node:url');
-    const config = JSON.parse(await readFile(new NodeURL('../wrangler.jsonc', import.meta.url), 'utf8'));
+    const config = JSON.parse((await readFile(new NodeURL('../wrangler.jsonc', import.meta.url), 'utf8'))
+      .replace(/^\s*\/\/.*$/gm, ''));
     assert.equal(config.env.operative.vars.RTDB_MODE, 'operative-public');
     assert.equal(config.env.operative.vars.BUS_ID, '');
     assert.equal(config.env.operative.workers_dev, false);

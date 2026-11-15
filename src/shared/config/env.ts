@@ -6,6 +6,22 @@ export interface FirebaseEnv {
   appId: string;
 }
 
+// Validar al consultar PULSO, sin bloquear el resto del panel por una URL pendiente.
+export function readPulsoApiUrl(origin = import.meta.env?.VITE_PULSO_API_ORIGIN,
+  production = import.meta.env?.PROD ?? false): string {
+  if (import.meta.env?.DEV && import.meta.env.MODE === 'pulso-local') return '/api/pulso';
+  if (!origin) {
+    if (production) throw new Error('Falta configurar VITE_PULSO_API_ORIGIN.');
+    return '/api/pulso';
+  }
+  const url = new URL(origin);
+  if (url.protocol !== 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('VITE_PULSO_API_ORIGIN debe ser un origen HTTPS sin ruta ni credenciales.');
+  }
+  return `${url.origin}/api/pulso`;
+}
+
 // Valida las variables obligatorias de configuración de Firebase antes de
 // inicializar la app. Si falta alguna, falla al iniciar con un mensaje claro
 // en lugar de producir errores difíciles de diagnosticar más adelante.

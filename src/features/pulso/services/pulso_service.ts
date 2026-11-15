@@ -1,3 +1,5 @@
+import { readPulsoApiUrl } from '../../../shared/config/env.ts';
+
 export const classifications = ['source-unavailable', 'insufficient-data', 'active-publishing',
   'active-publication-stale', 'inactive-finalized', 'inactive-unconfirmed',
   'recovering-pending', 'recovering-confirmed'] as const;
@@ -78,20 +80,21 @@ export function parsePulsoData(value: unknown): PulsoData {
 }
 
 export async function getPulso(
-  getToken: () => Promise<string | null>, signal: AbortSignal, fetchImpl: typeof fetch = fetch,
+  getToken: () => Promise<string | null>, signal: AbortSignal, fetchImpl: typeof fetch = fetch, apiOrigin?: string,
 ): Promise<PulsoData> {
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
   let onAbort: () => void = () => {};
   try {
     bounded.throwIfAborted();
+    const url = readPulsoApiUrl(apiOrigin);
     return await Promise.race([
       (async () => {
         const token = await getToken();
         bounded.throwIfAborted();
         if (!token) throw new PulsoQueryError(true);
-        const response = await fetchImpl('/api/pulso', {
+        const response = await fetchImpl(url, {
           method: 'GET', headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store', redirect: 'error', signal: bounded,
+          cache: 'no-store', redirect: 'error', credentials: 'omit', signal: bounded,
         });
         if (response.status === 401 || response.status === 403) throw new PulsoQueryError(true);
         if (!response.ok) throw new PulsoQueryError();

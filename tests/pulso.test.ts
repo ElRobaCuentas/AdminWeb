@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { getPulso, parsePulsoData, PulsoQueryError } from '../src/features/pulso/services/pulso_service.ts';
 import { checkAge, formatDuration, stateLabels } from '../src/features/pulso/pulsoPresentation.ts';
+import { readPulsoApiUrl } from '../src/shared/config/env.ts';
 
 const empty = { status: 'no-data', busId: 'TEST', observedState: null, lastCheck: null, activeIncidents: [], recentIncidents: [] };
 const observed = {
@@ -12,6 +13,32 @@ const observed = {
 const fetchOf = (status: number, body: unknown) => (async () => Response.json(body, { status })) as typeof fetch;
 const signal = () => new AbortController().signal;
 describe('cliente PULSO: contrato, sesión y consulta exclusiva de lectura', () => {
+  it('consulta el origen HTTPS configurado con el mismo Bearer, sin cookies ni redirects', async () => {
+    await getPulso(async () => 'session-token', signal(), (async (url, options) => {
+      assert.equal(url, 'https://pulso.test.invalid/api/pulso');
+      assert.deepEqual(options?.headers, { Authorization: 'Bearer session-token' });
+      assert.equal(options?.method, 'GET');
+      assert.equal(options?.credentials, 'omit');
+      assert.equal(options?.cache, 'no-store');
+      assert.equal(options?.redirect, 'error');
+      return Response.json(empty);
+    }) as typeof fetch, 'https://pulso.test.invalid/');
+  });
+  it('mantiene el proxy local y exige origen real en producción sin bloquear otras funciones del panel', () => {
+    assert.equal(readPulsoApiUrl(undefined, false), '/api/pulso');
+    assert.throws(() => readPulsoApiUrl(undefined, true), /VITE_PULSO_API_ORIGIN/);
+    assert.throws(() => readPulsoApiUrl('', true), /VITE_PULSO_API_ORIGIN/);
+  });
+  it('rechaza orígenes inseguros antes de obtener tokens o hacer HTTP', async () => {
+    let calls = 0;
+    for (const origin of ['http://pulso.test.invalid', 'https://localhost', 'https://127.0.0.1',
+      'https://user:secret@pulso.test.invalid', 'https://pulso.test.invalid/path', 'https://pulso.test.invalid/?token=x',
+      'https://pulso.test.invalid/#token', 'invalid']) {
+      await assert.rejects(getPulso(async () => { calls++; return 'token'; }, signal(),
+        (async () => { calls++; return Response.json(empty); }) as typeof fetch, origin), PulsoQueryError);
+    }
+    assert.equal(calls, 0);
+  });
   it('reutiliza el token, solo hace GET /api/pulso y no permite caché ni redirecciones', async () => {
     let calls = 0;
     const result = await getPulso(async () => 'session-token', signal(), (async (url, options) => {

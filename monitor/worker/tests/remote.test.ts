@@ -93,15 +93,19 @@ after(async () => {
 });
 
 describe('Cloudflare preparado, sin transporte real ni D1 remota', () => {
-  it('deja production sin UUID, origen de Central ni cron y con el interruptor apagado', async () => {
+  it('configura production con la D1 y Central confirmadas, sin cron y con el interruptor apagado', async () => {
     const config = JSON.parse((await readFile(path.join(root, 'wrangler.jsonc'), 'utf8')).replace(/^\s*\/\/.*$/gm, ''));
     const production = config.env.production;
     assert.deepEqual(production.triggers.crons, []);
-    assert.equal(production.d1_databases[0].database_id, '');
-    assert.equal(production.vars.PULSO_CENTRAL_ORIGIN, '');
+    assert.equal(production.d1_databases[0].binding, 'PULSO_DB');
+    assert.equal(production.d1_databases[0].database_name, 'pulso-memory-production');
+    assert.equal(production.d1_databases[0].database_id, '47e5664d-f9bd-435a-8f77-f4f8873c69cb');
+    assert.equal(production.vars.PULSO_CENTRAL_ORIGIN, 'https://burritounmsm.web.app');
     assert.equal(production.vars.PULSO_SCHEDULE_ENABLED, 'false');
-    await assert.rejects(runScheduledCheck({ ...production.vars, PULSO_DB: db }), /invalid-execution-configuration/);
+    const before = await snapshot();
+    await assert.rejects(runScheduledCheck({ ...production.vars, PULSO_DB: db }), /schedule-disabled/);
     assert.deepEqual(calls, []);
+    assert.equal(await snapshot(), before);
   });
 
   it('apagado no consulta ni escribe; activado conserva la comprobación en D1 local de prueba', async () => {

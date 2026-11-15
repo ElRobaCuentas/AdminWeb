@@ -26,8 +26,7 @@
         "PULSO_LOCAL_ONLY": "false",
         "PULSO_MEMORY": "d1",
         "PULSO_SCHEDULE_ENABLED": "false",
-        // Pendiente: origen HTTPS real de Central, sin ruta ni credenciales.
-        "PULSO_CENTRAL_ORIGIN": "",
+        "PULSO_CENTRAL_ORIGIN": "https://burritounmsm.web.app",
         "RTDB_MODE": "operative-public",
         "RTDB_ORIGIN": "https://burritounmsm-default-rtdb.firebaseio.com",
         "RTDB_NAMESPACE": "burritounmsm-default-rtdb",

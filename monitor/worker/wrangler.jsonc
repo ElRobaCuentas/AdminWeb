@@ -1,0 +1,83 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pulso-monitor-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-12",
+  "workers_dev": false,
+  "preview_urls": false,
+  "send_metrics": false,
+  "dev": { "ip": "127.0.0.1", "port": 8787, "local_protocol": "http" },
+  "vars": { "PULSO_LOCAL_ONLY": "true" },
+  "env": {
+    "production": {
+      "name": "pulso-monitor",
+      "workers_dev": true,
+      "preview_urls": false,
+      // Vigilancia autorizada cada minuto para el bus configurado.
+      "triggers": { "crons": ["* * * * *"] },
+      "d1_databases": [{
+        "binding": "PULSO_DB",
+        "database_name": "pulso-memory-production",
+        "database_id": "47e5664d-f9bd-435a-8f77-f4f8873c69cb",
+        "migrations_dir": "migrations"
+      }],
+      "vars": {
+        "PULSO_EXECUTION": "cloudflare",
+        "PULSO_LOCAL_ONLY": "false",
+        "PULSO_MEMORY": "d1",
+        "PULSO_SCHEDULE_ENABLED": "true",
+        "PULSO_CENTRAL_ORIGIN": "https://burritounmsm.web.app",
+        "RTDB_MODE": "operative-public",
+        "RTDB_ORIGIN": "https://burritounmsm-default-rtdb.firebaseio.com",
+        "RTDB_NAMESPACE": "burritounmsm-default-rtdb",
+        "BUS_ID": "AHK-459",
+        "PUBLICATION_STALE_AFTER_MS": "180000",
+        "RECOVERY_CONFIRMATIONS_REQUIRED": "2",
+        "MAX_FUTURE_SKEW_MS": "5000",
+        "READ_TIMEOUT_MS": "5000",
+        "PULSO_ADMIN_PROJECT_ID": "burritounmsm",
+        "PULSO_ADMIN_RTDB_ORIGIN": "https://burritounmsm-default-rtdb.firebaseio.com",
+        "PULSO_ADMIN_RTDB_NAMESPACE": "burritounmsm-default-rtdb"
+      }
+    },
+    "memory-local": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "triggers": { "crons": ["* * * * *"] },
+      "d1_databases": [{
+        "binding": "PULSO_DB",
+        "database_name": "pulso-memory-local",
+        "database_id": "00000000-0000-0000-0000-000000000001",
+        "remote": false,
+        "migrations_dir": "migrations"
+      }],
+      "vars": {
+        "PULSO_LOCAL_ONLY": "true",
+        "PULSO_MEMORY": "d1-local",
+        "RTDB_MODE": "local-authenticated",
+        "RTDB_ORIGIN": "http://127.0.0.1:9000",
+        "RTDB_NAMESPACE": "demo-pulso-memory",
+        "BUS_ID": "",
+        "PUBLICATION_STALE_AFTER_MS": "180000",
+        "RECOVERY_CONFIRMATIONS_REQUIRED": "2",
+        "MAX_FUTURE_SKEW_MS": "5000",
+        "READ_TIMEOUT_MS": "5000"
+      }
+    },
+    "operative": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "PULSO_LOCAL_ONLY": "true",
+        "RTDB_MODE": "operative-public",
+        "RTDB_ORIGIN": "https://burritounmsm-default-rtdb.firebaseio.com",
+        "RTDB_NAMESPACE": "burritounmsm-default-rtdb",
+        "BUS_ID": "",
+        "PUBLICATION_STALE_AFTER_MS": "180000",
+        "RECOVERY_CONFIRMATIONS_REQUIRED": "2",
+        "MAX_FUTURE_SKEW_MS": "5000",
+        "READ_TIMEOUT_MS": "5000"
+      }
+    }
+  }
+}

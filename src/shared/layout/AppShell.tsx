@@ -14,6 +14,7 @@ const NAV_ITEMS: { to: string; label: string; icon?: IconName }[] = [
   { to: '/choferes', label: 'Conductores', icon: 'drivers' },
   { to: '/buses', label: 'Buses', icon: 'bus' },
   { to: '/admins', label: 'Administradores', icon: 'admins' },
+  { to: '/pulso', label: 'PULSO', icon: 'clock' },
 ];
 
 const TITLES: Record<string, string> = {
@@ -22,6 +23,7 @@ const TITLES: Record<string, string> = {
   '/buses': 'Buses',
   '/asignaciones': 'Asignaciones',
   '/admins': 'Administradores',
+  '/pulso': 'PULSO',
 };
 
 export const AppShell = ({ children }: { children: ReactNode }) => {

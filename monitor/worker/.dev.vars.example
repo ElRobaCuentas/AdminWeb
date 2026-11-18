@@ -1,0 +1,18 @@
+# Configuración del modo local existente.
+RTDB_MODE=local-authenticated
+# Memoria optativa: activar con --env memory-local --var PULSO_MEMORY:d1-local.
+PULSO_MEMORY=off
+RTDB_ORIGIN=http://127.0.0.1:9000
+RTDB_NAMESPACE=demo-el-burrito-i03i04
+# Completar explícitamente la clave exacta del bus; no hay un bus operativo predeterminado.
+BUS_ID=
+# Token temporal de Firebase Auth Emulator; no usar owner ni credenciales administrativas.
+FIREBASE_ID_TOKEN=
+# Parámetros explícitos para la comprobación local, no política de producción.
+PUBLICATION_STALE_AFTER_MS=180000
+RECOVERY_CONFIRMATIONS_REQUIRED=2
+MAX_FUTURE_SKEW_MS=5000
+READ_TIMEOUT_MS=5000
+# Para el modo operativo público usar --env operative y BUS_ID explícito.
+# Único destino admitido: https://burritounmsm-default-rtdb.firebaseio.com/
+# En ese modo no se utiliza FIREBASE_ID_TOKEN ni se realizan lecturas programadas.

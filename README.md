@@ -152,12 +152,13 @@ npm run dev           # Wrangler en http://127.0.0.1:8787 (comprobación manual 
 npm run watch:local   # dispara la comprobación programada cada minuto; Ctrl+C la detiene
 ```
 
-La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el cron de un minuto existe solo en el entorno `memory-local`, mientras el Worker desplegado en `production` sigue sin ejecución programada. El diseño completo y el estado del despliegue en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2 y §3.2.1).
+La comprobación programada reutiliza el evaluador, la memoria D1 local y el registro de incidentes; el entorno `memory-local` permite simularla en desarrollo, mientras el Worker desplegado en `production` ya ejecuta el cron de un minuto con la vigilancia activa. El diseño completo y el estado del despliegue en Cloudflare están en la [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) (§3.2 y §3.2.1).
 
 ### API de lectura para Central (pantalla `/pulso`)
 
-`GET /api/pulso` (`http://127.0.0.1:8787/api/pulso`) expone el último estado,
-la última comprobación y los incidentes guardados en D1, **sin ejecutar el
+`GET /api/pulso` (`http://127.0.0.1:8787/api/pulso`) expone el último estado
+—incluido `observedState.observedTripStartedAt`—, la última comprobación y los
+incidentes guardados en D1, **sin ejecutar el
 evaluador**. Autoriza con el ID token de la sesión de Central
 (`Authorization: Bearer`), que Firebase verifica contra `/administradores/{uid}`
 con las reglas existentes: no se define una contraseña adicional. Requiere la
@@ -193,23 +194,25 @@ por defecto `http://127.0.0.1:8787`). Pruebas de la pantalla y su integración
 local: `npm run test:pulso` y `npm run test:pulso:integration` (exigen los
 puertos 19000/19099/14400/14500 libres).
 
-### Entorno `production` desplegado (sin vigilancia)
+### Entorno `production` desplegado (vigilancia activa)
 
 `monitor/worker/wrangler.jsonc` incluye un entorno separado `production`
 (`name: pulso-monitor`, `workers_dev: true`, `preview_urls: false`) con D1
 `pulso-memory-production`, `PULSO_EXECUTION=cloudflare`, `PULSO_MEMORY=d1`,
-`PULSO_SCHEDULE_ENABLED=false` y `triggers.crons: []`. La D1 remota está creada y
-migrada, y su UUID está configurado.
+`PULSO_SCHEDULE_ENABLED: "true"` y `triggers.crons: ["* * * * *"]`. La D1 remota
+está creada, migrada y en uso, y su UUID está configurado.
 
-El Worker fue desplegado en **`https://pulso-monitor.elburrito.workers.dev`** y
+El Worker está desplegado en **`https://pulso-monitor.elburrito.workers.dev`** y
 sirve `GET /api/pulso`. La API de Cloudflare confirmó el binding `PULSO_DB`, el
-interruptor apagado, el origen de Central configurado y `triggers.crons` vacío.
+interruptor encendido, el origen de Central configurado y el cron de un minuto.
 La ejecución remota exige configuración completa y falla cerrado: no consulta
 Firebase ni escribe en D1 si falta un valor. Con el interruptor apagado, el
-handler programado registra `schedule-disabled` y no evalúa.
+handler programado registra `schedule-disabled` y no evalúa; `production` lo
+mantiene encendido.
 
-La D1 remota tiene aplicadas las migraciones `0001`/`0002` y sus tres tablas
-están vacías. Valores confirmados:
+La D1 remota tiene aplicadas las migraciones `0001`, `0002` y `0003` y registra
+las comprobaciones reales del bus AHK-459; el historial se poda a 7 días. Valores
+confirmados:
 
 | Valor | Ubicación | Nota |
 |-------|-----------|------|
@@ -236,26 +239,47 @@ con la versión previa `004ca7b34e3d9821` como referencia de rollback; aprobaron
 el lint y las 20 pruebas de cliente. Después se publicó el refresco automático:
 release `1794782963690000` (versión `3b69ad434e3d33d7`,
 `2026-11-15T22:49:23.690Z`), con `1952a1f1e616bfa3` como rollback, tras aprobar
-el lint, las 26 pruebas de cliente y las 8 de integración local. En ambas, los
-archivos publicados coinciden byte a byte con `dist/` y `/pulso` resuelve a
-`index.html`; el build apunta a la API y al proyecto `burritounmsm`, sin
-marcadores de sandbox ni endpoints de emulador. La comprobación manual del
-refresco con una sesión administrativa real en producción queda pendiente.
+el lint, las 26 pruebas de cliente y las 8 de integración local. La publicación
+del inicio observado quedó en release `1795033146333000` (versión
+`3026576fcc32c269`, `2026-11-18T20:19:06.333Z`), con `3b69ad434e3d33d7` como
+rollback, tras aprobar 237 pruebas automatizadas, typecheck, lint y build. En
+todas, los archivos publicados coinciden byte a byte con `dist/` y `/pulso`
+resuelve a `index.html`; el build apunta a la API y al proyecto `burritounmsm`,
+sin marcadores de sandbox ni endpoints de emulador. La comprobación manual del
+refresco y de los dos indicadores con una sesión administrativa real y un
+recorrido activo nuevo queda pendiente.
 
 La validación administrativa real se completó en producción: con una cuenta
 administrativa habitual, PULSO mostró «Sin registros de PULSO» y «Todavía no hay
 comprobaciones guardadas para el bus AHK-459», sin errores de acceso ni de
-conectividad; las tres tablas D1 siguieron vacías. No se solicitaron ni
-registraron contraseñas o tokens. Las notificaciones externas siguen pospuestas.
+conectividad; en ese momento las tres tablas D1 seguían vacías. No se solicitaron
+ni registraron contraseñas o tokens. Las notificaciones externas siguen
+pospuestas.
 
 `npx wrangler deploy --env production --dry-run` valida la configuración sin
-autenticar ni crear recursos. El orden previsto —crear D1 y aplicar las
-migraciones `0001`/`0002`, completar valores, desplegar el Worker, verificar la
-API, publicar Central y activar interruptor y cron— está en la
+autenticar ni crear recursos. El orden que se siguió —crear D1, aplicar las
+migraciones, completar valores, desplegar el Worker, verificar la API, publicar
+Central y activar interruptor y cron— está en la
 [arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md)
-(§3.2.1). La D1, las migraciones, el despliegue y la publicación ya se
-ejecutaron con autorización, y la lectura autenticada quedó validada. Solo la
-activación de la vigilancia sigue pendiente.
+(§3.2.1). Todo se ejecutó con autorización, la lectura autenticada quedó validada
+y la vigilancia corre cada minuto. Queda pendiente la validación operativa de los
+dos indicadores durante un recorrido activo nuevo con el Motorola y la
+comprobación manual del refresco con una sesión administrativa real.
+
+### Inicio observado del recorrido y su duración
+
+La migración `0003_tracking_observed_start.sql` agrega
+`tracking_state.observed_trip_started_at`, que guarda la hora de la primera
+comprobación que observó `isActive:true` y se conserva ante interrupciones,
+recuperaciones, fuente inaccesible y reinicios; se limpia solo al observar
+`isActive:false`. Central muestra «Inicio observado del recorrido (Lima)» y
+«Tiempo de recorrido observado». No es la hora de INICIAR en BurritoDriverApp ni
+tiempo continuo de GPS: la duración incluye cortes de conexión y, si no se
+observó el `false` intermedio, dos recorridos pueden unirse. Un período anterior
+sin inicio confiable muestra «Sin información disponible» / «No calculable»; uno
+inactivo, «No aplica». Con datos antiguos, error o fuente distinta de `ok`, la
+duración se limita a la última comprobación guardada. Detalle y límites:
+[arquitectura compartida](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md) §3.2.
 
 ## Build y deploy
 

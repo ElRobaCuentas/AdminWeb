@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { getPulso, parsePulsoData, PulsoQueryError } from '../src/features/pulso/services/pulso_service.ts';
-import { checkAge, formatDuration, stateLabels } from '../src/features/pulso/pulsoPresentation.ts';
+import { checkAge, formatDuration, formatMoment, observedTripDetails, stateLabels } from '../src/features/pulso/pulsoPresentation.ts';
 import { readPulsoApiUrl } from '../src/shared/config/env.ts';
 
 const empty = { status: 'no-data', busId: 'TEST', observedState: null, lastCheck: null, activeIncidents: [], recentIncidents: [] };
@@ -102,6 +102,37 @@ describe('cliente PULSO: contrato, sesión y consulta exclusiva de lectura', () 
   });
 });
 describe('presentación sin reevaluar el seguimiento', () => {
+  it('acepta API anterior, nueva con null o inicio válido, y rechaza fechas incoherentes', () => {
+    for (const start of [undefined, null, 1000]) {
+      assert.doesNotThrow(() => parsePulsoData({ ...observed,
+        observedState: { ...observed.observedState, observedTripStartedAt: start } }));
+    }
+    for (const start of [0, -1, 1001, '1000', 1.5]) {
+      assert.throws(() => parsePulsoData({ ...observed,
+        observedState: { ...observed.observedState, observedTripStartedAt: start } }), PulsoQueryError);
+    }
+  });
+  it('duración en minutos y horas desde el inicio guardado, no desde la apertura de Central', () => {
+    const data = parsePulsoData({ ...observed, observedState: { ...observed.observedState, observedTripStartedAt: 1000 } });
+    assert.equal(observedTripDetails(data, 5000, 5000, false)?.elapsed, '0 min');
+    assert.equal(observedTripDetails(data, 5000, 65000, false)?.elapsed, '1 min');
+    const hours = { ...data, lastCheck: { ...data.lastCheck!, evaluatedAt: 7_201_000, ageMs: 0 } };
+    assert.equal(observedTripDetails(hours, 5000, 5000, false)?.elapsed, '2 h 0 min');
+    assert.equal(observedTripDetails(hours, 9000, 9000, false)?.elapsed, '2 h 0 min');
+    assert.equal(observedTripDetails(hours, 9000, 9000, false)?.start, formatMoment(1000));
+  });
+  it('no inventa inicio anterior, ni duración inactiva, y limita datos antiguos o errores a la comprobación guardada', () => {
+    const data = parsePulsoData(observed);
+    assert.deepEqual(observedTripDetails(data, 5000, 5000, false), { start: 'Sin información disponible', elapsed: 'No calculable' });
+    const inactive = { ...data, observedState: { ...data.observedState!, monitoringActive: false, declaredActive: false } };
+    assert.deepEqual(observedTripDetails(inactive, 5000, 5000, false), { start: 'No aplica', elapsed: 'No aplica' });
+    const active = { ...data, observedState: { ...data.observedState!, observedTripStartedAt: 1000 },
+      lastCheck: { ...data.lastCheck!, evaluatedAt: 2_701_000, ageMs: 0 } };
+    const frozen = '45 min (hasta la última comprobación guardada)';
+    assert.equal(observedTripDetails(active, 5000, 65000, true)?.elapsed, frozen);
+    assert.equal(observedTripDetails(active, 5000, 245000, false)?.elapsed, frozen);
+    assert.equal(observedTripDetails({ ...active, lastCheck: { ...active.lastCheck, sourceStatus: 'unavailable' } }, 5000, 65000, false)?.elapsed, frozen);
+  });
   it('distingue ausencia de registros de comprobaciones sin incidentes', () => {
     assert.equal(parsePulsoData(empty).status, 'no-data');
     assert.equal(parsePulsoData(observed).status, 'observed');

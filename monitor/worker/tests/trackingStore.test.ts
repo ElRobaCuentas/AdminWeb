@@ -54,7 +54,7 @@ before(async () => {
   await mkdir(parent, { recursive: true });
   scratch = await mkdtemp(path.join(parent, 'pulso-d1-test-'));
   await open();
-  for (const name of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql']) {
+  for (const name of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql', '0003_tracking_observed_start.sql']) {
     const migration = await readFile(new NodeURL(`../migrations/${name}`, import.meta.url), 'utf8');
     await db.batch(migration.split(';').map(sql => sql.trim()).filter(Boolean).map(sql => db.prepare(sql)));
   }
@@ -78,6 +78,7 @@ describe('memoria real D1 local, con RTDB simulada', () => {
     assert.equal(states.length, 1);
     assert.equal(observations.length, 1);
     assert.equal(states[0].last_check_id, observations[0].check_id);
+    assert.equal(states[0].observed_trip_started_at, NOW);
     assert.equal(JSON.parse(String(states[0].prior_state_json)).lastLatitude, -12.05123);
     assert.ok(!JSON.stringify(observations).includes('-12.05123'));
     assert.ok(!JSON.stringify(observations).includes('-77.08123'));
@@ -110,6 +111,7 @@ describe('memoria real D1 local, con RTDB simulada', () => {
     const result = await check(NOW + 60_000);
     assert.equal(result.memory?.reusedPrevious, true);
     assert.equal(result.memory?.revision, 2);
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, NOW);
     assert.equal(result.evaluation.classification, 'recovering-pending');
     assert.equal((await rows('tracking_observations')).length, 2);
   });
@@ -135,6 +137,37 @@ describe('memoria real D1 local, con RTDB simulada', () => {
     const result = await check(NOW + 120_000, { isActive: false });
     assert.equal(result.evaluation.classification, 'inactive-unconfirmed');
     assert.equal(result.evaluation.recoveryState, 'none');
+  });
+
+  it('conserva el inicio durante horas, interrupción, recuperación, relevos y fuente inaccesible', async () => {
+    await check(NOW);
+    for (const at of [NOW + 60_000, NOW + 4 * 3_600_000]) await check(at);
+    await check(NOW + 4 * 3_600_000 + 240_000, payload(NOW));
+    await unavailable(NOW + 4 * 3_600_000 + 300_000);
+    await check(NOW + 4 * 3_600_000 + 360_000, null);
+    await check(NOW + 4 * 3_600_000 + 420_000, { isActive: 'invalid' });
+    await check(NOW + 4 * 3_600_000 + 480_000);
+    const recovered = await check(NOW + 4 * 3_600_000 + 540_000);
+    assert.equal(recovered.evaluation.recoveryState, 'confirmed');
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, NOW);
+    // La identidad de conductor no forma parte del período observado.
+    await check(NOW + 8 * DAY, { ...payload(NOW + 8 * DAY), driverId: 'OTHER' });
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, NOW);
+    assert.equal((await rows('tracking_observations')).length, 1);
+  });
+
+  it('inactividad limpia el inicio y false → true abre otro período; no fecha uno preexistente', async () => {
+    await check(NOW);
+    await db.prepare('UPDATE tracking_state SET observed_trip_started_at = NULL').run();
+    await unavailable(NOW + 60_000);
+    await check(NOW + 120_000);
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, null);
+    await check(NOW + 180_000, { isActive: false });
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, null);
+    await check(NOW + 240_000);
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, NOW + 240_000);
+    await check(NOW + 300_000, { isActive: false });
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, null);
   });
 
   it('aísla memoria por fuente y bus', async () => {
@@ -209,6 +242,7 @@ describe('memoria real D1 local, con RTDB simulada', () => {
     const rejected = results.find(result => result.status === 'rejected');
     assert.ok(rejected?.status === 'rejected' && memoryFailure('memory-conflict')(rejected.reason));
     assert.equal((await rows('tracking_state'))[0].revision, 1);
+    assert.equal((await rows('tracking_state'))[0].observed_trip_started_at, NOW);
     assert.equal((await rows('tracking_observations')).length, 1);
   });
 
@@ -561,6 +595,16 @@ describe('memoria real D1 local, con RTDB simulada', () => {
       assert.ok(states.every(row => row.revision === 2 && row.evaluated_at === NOW && row.prior_state_json === '{}'));
       assert.equal((await legacyDb.prepare('SELECT * FROM tracking_observations').all()).results.length, 8);
       assert.equal((await legacyDb.prepare('SELECT * FROM tracking_incidents').all()).results.length, 0);
+      const historyBefore = (await legacyDb.prepare('SELECT * FROM tracking_observations ORDER BY check_id').all()).results;
+      const added = await readFile(new NodeURL('../migrations/0003_tracking_observed_start.sql', import.meta.url), 'utf8');
+      await legacyDb.prepare(added).run();
+      const migrated = (await legacyDb.prepare('SELECT * FROM tracking_state ORDER BY bus_id').all()).results;
+      assert.ok(migrated.every(row => row.observed_trip_started_at === null));
+      assert.deepEqual(migrated.map(({ observed_trip_started_at: _start, ...row }) => row), states);
+      assert.deepEqual((await legacyDb.prepare('SELECT * FROM tracking_observations ORDER BY check_id').all()).results, historyBefore);
+      // La escritura anterior por columnas explícitas sigue funcionando tras la migración.
+      await legacyDb.prepare('UPDATE tracking_state SET evaluated_at = evaluated_at + 1 WHERE bus_id = ?').bind('ACTIVE').run();
+      assert.equal((await legacyDb.prepare("SELECT observed_trip_started_at FROM tracking_state WHERE bus_id = 'ACTIVE'").first())?.observed_trip_started_at, null);
     } finally {
       await legacy.dispose();
     }

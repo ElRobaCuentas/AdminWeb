@@ -57,7 +57,7 @@ before(async () => {
   await mkdir(parent, { recursive: true });
   scratch = await mkdtemp(path.join(parent, 'pulso-scheduled-'));
   await open();
-  for (const name of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql']) {
+  for (const name of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql', '0003_tracking_observed_start.sql']) {
     const sql = await readFile(path.join(root, 'migrations', name), 'utf8');
     await db.batch(sql.split(';').map(part => part.trim()).filter(Boolean).map(part => db.prepare(part)));
   }

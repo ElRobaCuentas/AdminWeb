@@ -60,7 +60,8 @@ window.polling = {
     const ageMs = Date.now() - evaluatedAt;
     requests[index].resolve(Response.json({
       status: 'observed', busId: 'POLLING-TEST',
-      observedState: { classification: 'active-publishing', monitoringActive: true, declaredActive: true, publicationTimestamp: evaluatedAt },
+      observedState: { classification: 'active-publishing', monitoringActive: true, declaredActive: true,
+        publicationTimestamp: evaluatedAt, observedTripStartedAt: base - 2700000 },
       lastCheck: { evaluatedAt, ageMs, staleAfterMs: 180000, freshness: ageMs > 180000 ? 'old' : 'recent', sourceStatus: 'ok' },
       activeIncidents: [], recentIncidents: [],
     }, { status }));
@@ -114,21 +115,25 @@ describe('PULSO: refresco en navegador con reloj controlado y StrictMode', () =>
   it('consulta al entrar y a los 60 segundos sin desmontar datos ni solapar consultas', async () => {
     assert.ok(await browser.evaluate(includes('Cargando PULSO…')));
     await respond(0);
+    assert.ok(await browser.evaluate(includes('45 min')));
     await browser.evaluate('window.summaryCard = document.querySelector(".pulso-summary .card"); window.polling.advance(59999)');
     assert.equal(await count(), 1);
     await browser.evaluate('window.polling.advance(1)');
     await browser.waitFor('window.polling.requests.length === 2');
+    await browser.waitFor(includes('46 min'));
     assert.equal(await browser.evaluate('window.summaryCard === document.querySelector(".pulso-summary .card")'), true);
     assert.equal(await browser.evaluate(includes('Cargando PULSO…')), false);
     assert.ok(await browser.evaluate(includes('Consultando…')));
     await browser.evaluate('window.polling.advance(120000); document.querySelector("button").click()');
     assert.equal(await count(), 2);
     await respond(1);
+    assert.ok(await browser.evaluate(includes('48 min')));
   });
   it('el botón comparte la consulta, conserva datos antiguos y no reinicia su antigüedad', async () => {
     await browser.evaluate('window.polling.advance(60000)');
     await browser.waitFor('window.polling.requests.length === 3');
     await respond(2);
+    assert.ok(await browser.evaluate(includes('45 min (hasta la última comprobación guardada)')));
     assert.ok(await browser.evaluate(includes('Datos antiguos:')));
     assert.equal(await browser.evaluate(includes('Comprobación reciente')), false);
     await refresh();
@@ -154,6 +159,7 @@ describe('PULSO: refresco en navegador con reloj controlado y StrictMode', () =>
     await refresh();
     await browser.waitFor('window.polling.requests.length === 7');
     await respond(6, 503);
+    assert.ok(await browser.evaluate(includes('hasta la última comprobación guardada')));
     assert.equal(await browser.evaluate(includes('Comprobación reciente')), false);
     assert.ok(await browser.evaluate(includes('Última comprobación guardada')));
   });

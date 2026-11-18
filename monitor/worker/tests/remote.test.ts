@@ -73,7 +73,7 @@ before(async () => {
   proxy = await getPlatformProxy<Env>({ configPath: path.join(root, 'wrangler.jsonc'), environment: 'memory-local',
     remoteBindings: false, envFiles: [], persist: { path: scratch } });
   db = proxy.env.PULSO_DB!;
-  for (const file of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql']) {
+  for (const file of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql', '0003_tracking_observed_start.sql']) {
     const sql = await readFile(path.join(root, 'migrations', file), 'utf8');
     await db.batch(sql.split(';').map(v => v.trim()).filter(Boolean).map(v => db.prepare(v)));
   }

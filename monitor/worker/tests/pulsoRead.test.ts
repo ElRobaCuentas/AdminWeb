@@ -62,7 +62,7 @@ before(async () => {
   proxy = await getPlatformProxy<Env>({ configPath: path.join(root, 'wrangler.jsonc'), environment: 'memory-local',
     remoteBindings: false, envFiles: [], persist: { path: scratch } });
   db = proxy.env.PULSO_DB!;
-  for (const name of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql']) {
+  for (const name of ['0001_tracking_memory.sql', '0002_tracking_incidents.sql', '0003_tracking_observed_start.sql']) {
     const sql = await readFile(path.join(root, 'migrations', name), 'utf8');
     await db.batch(sql.split(';').map(part => part.trim()).filter(Boolean).map(part => db.prepare(part)));
   }
@@ -177,6 +177,7 @@ describe('lectura exclusiva de datos persistidos en D1 local real', () => {
     const body = result.body as any;
     assert.equal(body.status, 'observed');
     assert.equal(body.observedState.classification, 'active-publishing');
+    assert.equal(body.observedState.observedTripStartedAt, NOW);
     assert.equal(body.lastCheck.evaluatedAt, NOW);
     assert.deepEqual(body.activeIncidents, []);
     assert.deepEqual(body.recentIncidents, []);
@@ -228,9 +229,18 @@ describe('lectura exclusiva de datos persistidos en D1 local real', () => {
     const stopped = ((await api()).body as any).observedState;
     assert.equal(stopped.declaredActive, false);
     assert.equal(stopped.monitoringActive, false);
+    assert.equal(stopped.observedTripStartedAt, null);
     assert.equal(stopped.classification, 'inactive-unconfirmed');
     await check(NOW + 2, { isActive: true, timestamp: -1 });
     assert.equal(((await api()).body as any).observedState.publicationTimestamp, null);
+  });
+  it('expone el inicio persistido sin reconstruir períodos anteriores ni cambiarlo por errores de fuente', async () => {
+    await check(NOW);
+    await check(NOW + 60_000, 'outage');
+    assert.equal(((await api(NOW + 60_000)).body as any).observedState.observedTripStartedAt, NOW);
+    await db.prepare('UPDATE tracking_state SET observed_trip_started_at = NULL').run();
+    await check(NOW + 120_000);
+    assert.equal(((await api(NOW + 120_000)).body as any).observedState.observedTripStartedAt, null);
   });
   it('aísla fuente y bus y no expone coordenadas, token, perfil, SQL ni estado interno', async () => {
     await check(NOW);

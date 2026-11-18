@@ -16,6 +16,7 @@ export interface TrackingSnapshot {
   evaluatedAt: number;
   lastFreshSeenAt: number | null;
   monitoringActive: boolean;
+  observedTripStartedAt: number | null;
   prior: PriorTrackingState;
 }
 export interface CheckSummary {
@@ -87,13 +88,17 @@ export async function loadTrackingState(db: D1Database, key: TrackingKey, config
     if (!Number.isSafeInteger(row.revision) || Number(row.revision) < 1 ||
       !Number.isSafeInteger(row.evaluated_at) || Number(row.evaluated_at) <= 0 ||
       !nullableTimestamp(row.last_fresh_seen_at) || typeof row.last_check_id !== 'string' || !row.last_check_id ||
-      (row.monitoring_active !== 0 && row.monitoring_active !== 1)) {
+      (row.monitoring_active !== 0 && row.monitoring_active !== 1) ||
+      !(row.observed_trip_started_at === null || (Number.isSafeInteger(row.observed_trip_started_at) &&
+        Number(row.observed_trip_started_at) > 0 && Number(row.observed_trip_started_at) <= Number(row.evaluated_at))) ||
+      (row.monitoring_active === 0 && row.observed_trip_started_at !== null)) {
       throw new MemoryError('memory-state-invalid');
     }
     return {
       revision: Number(row.revision), lastCheckId: row.last_check_id, evaluatedAt: Number(row.evaluated_at),
       lastFreshSeenAt: row.last_fresh_seen_at as number | null, prior: decodePrior(row.prior_state_json),
       monitoringActive: row.monitoring_active === 1,
+      observedTripStartedAt: row.observed_trip_started_at as number | null,
     };
   } catch (error) {
     if (error instanceof MemoryError) throw error;
@@ -113,15 +118,19 @@ export async function saveTrackingCheck(
   // Ausencia de datos o fuente inaccesible no equivale a DETENER.
   const monitoringActive = summary.source.status !== 'unavailable' && summary.input.isActive !== null
     ? summary.input.isActive : previous?.monitoringActive ?? false;
+  // Un período ya activo sin inicio conocido no se fecha a partir del despliegue.
+  // Fuente inaccesible o declaración ausente conservan el período observado.
+  const observedStart = !monitoringActive ? null :
+    previous?.monitoringActive ? previous.observedTripStartedAt : evaluatedAt;
   const values = [key.sourceKey, key.busId, revision, checkId, evaluatedAt, lastFresh,
-    STATE_VERSION, effectiveConfig, evaluation.classification, JSON.stringify(priorProjection(evaluation)), Number(monitoringActive)];
+    STATE_VERSION, effectiveConfig, evaluation.classification, JSON.stringify(priorProjection(evaluation)), Number(monitoringActive), observedStart];
   try {
     const stateWrite = previous === null
       ? db.prepare(`INSERT INTO tracking_state
-          (source_key, bus_id, revision, last_check_id, evaluated_at, last_fresh_seen_at, state_version, config_json, last_classification, prior_state_json, monitoring_active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_key, bus_id) DO NOTHING`).bind(...values)
+          (source_key, bus_id, revision, last_check_id, evaluated_at, last_fresh_seen_at, state_version, config_json, last_classification, prior_state_json, monitoring_active, observed_trip_started_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_key, bus_id) DO NOTHING`).bind(...values)
       : db.prepare(`UPDATE tracking_state SET revision = ?, last_check_id = ?, evaluated_at = ?, last_fresh_seen_at = ?,
-          state_version = ?, config_json = ?, last_classification = ?, prior_state_json = ?, monitoring_active = ?
+          state_version = ?, config_json = ?, last_classification = ?, prior_state_json = ?, monitoring_active = ?, observed_trip_started_at = ?
           WHERE source_key = ? AND bus_id = ? AND revision = ? AND last_check_id = ?
           AND state_version = ? AND config_json = ? AND evaluated_at <= ?`).bind(
           ...values.slice(2), key.sourceKey, key.busId, previous.revision, previous.lastCheckId,

@@ -55,6 +55,7 @@ async function login(dni: string) {
   await click('Entrar');
 }
 async function click(text: string) {
+  await browser.waitFor(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === ${JSON.stringify(text)} && !b.disabled)`);
   await browser.evaluate(`(() => {
     const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)});
     if (!button || button.disabled) throw new Error('Botón no disponible');
@@ -147,6 +148,11 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
     await browser.waitFor(includes('Sin incidentes registrados'));
     await browser.waitFor(includes('Sin incidentes activos'));
     assert.ok(await browser.evaluate(includes('Recorrido activo · Publicación reciente')));
+    assert.ok(await browser.evaluate(includes('Inicio observado del recorrido (Lima)')));
+    assert.ok(await browser.evaluate(includes('Tiempo de recorrido observado')));
+    const start = (await db.prepare('SELECT observed_trip_started_at FROM tracking_state').first())?.observed_trip_started_at;
+    assert.ok(typeof start === 'number');
+    assert.equal(await browser.evaluate(`document.querySelector('.pulso-summary .card').innerText.includes(new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Lima' }).format(${start}))`), true);
     assert.equal(await snapshot(), before);
   });
   it('muestra abiertos y cerrados; mantiene los últimos 20 y no escribe ni evalúa al actualizar', async () => {
@@ -170,12 +176,13 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
   it('distingue datos antiguos sin convertirlos en un nuevo estado del seguimiento', async () => {
     // Envejecer la comprobación aislada conservando el enlace estado/observación.
     const at = Date.now() - 240000;
-    await db.batch([db.prepare('UPDATE tracking_state SET evaluated_at = ?').bind(at),
+    await db.batch([db.prepare('UPDATE tracking_state SET evaluated_at = ?, observed_trip_started_at = ?').bind(at, at - 2_700_000),
       db.prepare('UPDATE tracking_observations SET evaluated_at = ? WHERE check_id IN (SELECT last_check_id FROM tracking_state)').bind(at)]);
     const before = await snapshot();
     await click('Actualizar');
     await browser.waitFor(includes('Datos antiguos:'));
     assert.ok(await browser.evaluate(includes('Publicación interrumpida')));
+    assert.ok(await browser.evaluate(includes('45 min (hasta la última comprobación guardada)')));
     assert.equal(await snapshot(), before);
   });
   it('es adaptable en escritorio y móvil; el menú móvil navega y se cierra', async t => {
@@ -196,6 +203,7 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
     await browser.evaluate('document.querySelector("button[aria-label=\'Abrir menú\']").click()');
     await browser.evaluate('document.querySelector("a[href=\'/pulso\']").click()');
     await browser.waitFor(includes('Datos antiguos:'));
+    assert.ok(await browser.evaluate(includes('45 min (hasta la última comprobación guardada)')));
     t.diagnostic(`Capturas locales: ${evidence}`);
   });
   it('muestra acceso denegado al retirar el rol aunque React conserve la sesión', async () => {
@@ -217,6 +225,27 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
     await click('Actualizar');
     await browser.waitFor(includes('Datos antiguos:'));
     assert.deepEqual(exceptions, []);
+  });
+  it('no inventa inicio anterior, muestra No aplica al detener y conserva el inicio al volver a Central', async () => {
+    await db.prepare('UPDATE tracking_state SET observed_trip_started_at = NULL').run();
+    await click('Actualizar');
+    await browser.waitFor(includes('Sin información disponible'));
+    assert.ok(await browser.evaluate(includes('No calculable')));
+    await evaluate({ isActive: false });
+    await click('Actualizar');
+    await browser.waitFor(includes('Recorrido inactivo'));
+    assert.equal(await browser.evaluate(`[...document.querySelectorAll('.pulso-summary .card dd')].filter(dd => dd.textContent === 'No aplica').length`), 2);
+    await evaluate({ isActive: true, timestamp: Date.now() });
+    await click('Actualizar');
+    await browser.waitFor(includes('0 min'));
+    const start = (await db.prepare('SELECT observed_trip_started_at FROM tracking_state').first())?.observed_trip_started_at;
+    const before = await snapshot();
+    await browser.evaluate('document.querySelector("a[href=\'/buses\']").click()');
+    await browser.waitFor('location.pathname === "/buses"');
+    await browser.evaluate('document.querySelector("a[href=\'/pulso\']").click()');
+    await browser.waitFor(includes('0 min'));
+    assert.equal((await db.prepare('SELECT observed_trip_started_at FROM tracking_state').first())?.observed_trip_started_at, start);
+    assert.equal(await snapshot(), before);
   });
   it('rechaza al usuario sin rol en el acceso habitual de Central', async () => {
     await browser.evaluate(`(async () => { const { firebaseAuth } = await import('/src/shared/config/firebase.ts'); await firebaseAuth.signOut(); })()`);

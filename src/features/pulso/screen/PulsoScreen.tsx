@@ -7,7 +7,7 @@ import { EmptyState, Spinner } from '../../../shared/ui/Feedback';
 import { Icon } from '../../../shared/ui/Icon';
 import { getPulso, PulsoQueryError } from '../services/pulso_service';
 import type { Incident, PulsoData } from '../services/pulso_service';
-import { checkAge, closeLabels, formatDuration, formatMoment, incidentLabels, stateLabels } from '../pulsoPresentation';
+import { checkAge, closeLabels, formatDuration, formatMoment, incidentLabels, observedTripDetails, stateLabels } from '../pulsoPresentation';
 import '../pulso.css';
 
 type View = { status: 'loading' } | { status: 'error'; error: PulsoQueryError } |
@@ -78,6 +78,7 @@ export function PulsoScreen() {
   const check = data?.lastCheck;
   const age = check && view.status === 'ready' ? checkAge(check, view.receivedAt, now) : null;
   const error = view.status === 'loading' ? null : view.error;
+  const trip = view.status === 'ready' ? observedTripDetails(view.data, view.receivedAt, now, !!error) : null;
   return <div className="pulso-screen">
     <div className="pulso-toolbar">
       <p className="text-muted">Estado e incidentes registrados por PULSO. Actualizar solo consulta los registros; no ejecuta una evaluación.</p>
@@ -107,7 +108,10 @@ export function PulsoScreen() {
               <dt>Declaración del recorrido</dt><dd>{state.declaredActive === null ? 'Desconocida' : state.declaredActive ? 'Activo' : 'Inactivo'}</dd>
               <dt>Vigilancia registrada</dt><dd>{state.monitoringActive ? 'Activa' : 'Inactiva'}</dd>
               <dt>Última publicación observada</dt><dd>{formatMoment(state.publicationTimestamp)}</dd>
+              <dt>Inicio observado del recorrido (Lima)</dt><dd>{trip?.start}</dd>
+              <dt>Tiempo de recorrido observado</dt><dd>{trip?.elapsed}</dd>
             </dl>
+            <p className="text-muted">Desde la primera observación activa de PULSO; no indica el inicio exacto ni el tiempo de transmisión GPS continua.</p>
           </div>
         </Card>
         <Card><CardHeader title="Última comprobación de PULSO" />

@@ -34,3 +34,19 @@ export function checkAge(check: NonNullable<PulsoData['lastCheck']>, receivedAt:
   const ageMs = check.ageMs + Math.max(0, now - receivedAt);
   return { ageMs, old: check.freshness === 'old' || ageMs > check.staleAfterMs };
 }
+
+export function observedTripDetails(data: PulsoData, receivedAt: number, now: number, queryFailed: boolean) {
+  const state = data.observedState;
+  const check = data.lastCheck;
+  if (!state || !check) return null;
+  if (!state.monitoringActive) return { start: 'No aplica', elapsed: 'No aplica' };
+  const start = state.observedTripStartedAt;
+  if (start == null) return { start: 'Sin información disponible', elapsed: 'No calculable' };
+  const age = checkAge(check, receivedAt, now);
+  const savedOnly = queryFailed || age.old || check.sourceStatus !== 'ok' || state.declaredActive !== true;
+  // El reloj del servidor ancla la estimación; un dato incierto se limita a la comprobación guardada.
+  const until = check.evaluatedAt + (savedOnly ? 0 : age.ageMs);
+  const minutes = Math.floor(Math.max(0, until - start) / 60_000);
+  const elapsed = minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+  return { start: formatMoment(start), elapsed: `${elapsed}${savedOnly ? ' (hasta la última comprobación guardada)' : ''}` };
+}

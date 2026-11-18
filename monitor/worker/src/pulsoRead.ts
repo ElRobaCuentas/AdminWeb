@@ -39,7 +39,7 @@ async function readPersisted(env: PulsoReadEnv, now: number) {
   try {
     // Solo SELECT en un batch: estado, observación e incidentes de la misma lectura transaccional.
     const results = await db.batch<Record<string, unknown>>([
-      db.prepare(`SELECT s.last_classification, s.evaluated_at, s.monitoring_active,
+      db.prepare(`SELECT s.last_classification, s.evaluated_at, s.monitoring_active, s.observed_trip_started_at,
         o.check_id, o.evaluated_at AS observation_at, o.source_status, o.declared_active, o.publication_timestamp
         FROM tracking_state s LEFT JOIN tracking_observations o ON o.check_id = s.last_check_id
           AND o.source_key = s.source_key AND o.bus_id = s.bus_id
@@ -60,6 +60,8 @@ async function readPersisted(env: PulsoReadEnv, now: number) {
     if (!classifications.includes(String(row.last_classification)) || !timestamp(row.evaluated_at) ||
       row.observation_at !== row.evaluated_at || typeof row.check_id !== 'string' ||
       (row.monitoring_active !== 0 && row.monitoring_active !== 1) ||
+      !(row.observed_trip_started_at === null || (timestamp(row.observed_trip_started_at) && row.observed_trip_started_at <= row.evaluated_at)) ||
+      (row.monitoring_active === 0 && row.observed_trip_started_at !== null) ||
       !['ok', 'missing', 'unavailable'].includes(String(row.source_status)) ||
       (row.declared_active !== null && row.declared_active !== 0 && row.declared_active !== 1) ||
       (row.publication_timestamp !== null && (typeof row.publication_timestamp !== 'number' || !Number.isFinite(row.publication_timestamp)))) throw new Error();
@@ -68,6 +70,7 @@ async function readPersisted(env: PulsoReadEnv, now: number) {
       status: 'observed', busId: target.busId,
       observedState: {
         classification: row.last_classification, monitoringActive: row.monitoring_active === 1,
+        observedTripStartedAt: row.observed_trip_started_at,
         declaredActive: row.declared_active === null ? null : row.declared_active === 1,
         publicationTimestamp: timestamp(row.publication_timestamp) ? row.publication_timestamp : null,
       },

@@ -23,6 +23,7 @@ export interface PulsoData {
     monitoringActive: boolean;
     declaredActive: boolean | null;
     publicationTimestamp: number | null;
+    observedTripStartedAt?: number | null;
   };
   lastCheck: null | {
     evaluatedAt: number;
@@ -75,6 +76,11 @@ export function parsePulsoData(value: unknown): PulsoData {
       !time(check.evaluatedAt) || !duration(check.ageMs) || !time(check.staleAfterMs) ||
       !['recent', 'old'].includes(String(check.freshness)) ||
       !['ok', 'missing', 'unavailable'].includes(String(check.sourceStatus))) throw new PulsoQueryError();
+    // Campo aditivo: la API anterior no lo entrega durante la transición.
+    if (!(state.observedTripStartedAt === undefined || state.observedTripStartedAt === null ||
+      (time(state.observedTripStartedAt) && state.observedTripStartedAt <= check.evaluatedAt && state.monitoringActive))) {
+      throw new PulsoQueryError();
+    }
   }
   return value as unknown as PulsoData;
 }

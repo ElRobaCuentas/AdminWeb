@@ -17,6 +17,26 @@ export const closeLabels: Record<CloseReason, string> = {
   'publications-recovered': 'Publicaciones recuperadas', 'tracking-inactive': 'Recorrido declarado inactivo',
   'source-accessible': 'Fuente accesible de nuevo',
 };
+
+export const tripLabels: Record<Classification, { label: string; description: string }> = {
+  'active-publishing': { label: 'Seguimiento funcionando', description: 'El bus está publicando ubicaciones recientes.' },
+  'active-publication-stale': { label: 'Seguimiento interrumpido', description: 'El recorrido sigue declarado activo, pero no llegan ubicaciones recientes.' },
+  'recovering-pending': { label: 'Seguimiento en recuperación', description: 'Volvieron las publicaciones. PULSO espera confirmar la recuperación.' },
+  'recovering-confirmed': { label: 'Recuperación confirmada', description: 'El bus volvió a publicar ubicaciones recientes y el recorrido continúa activo.' },
+  'inactive-unconfirmed': { label: 'Bus fuera de recorrido', description: 'No se esperan nuevas ubicaciones.' },
+  'inactive-finalized': { label: 'Bus fuera de recorrido', description: 'No se esperan nuevas ubicaciones.' },
+  'source-unavailable': { label: 'Estado del recorrido sin confirmar', description: 'PULSO no pudo consultar Firebase en la última revisión.' },
+  'insufficient-data': { label: 'Información del recorrido incompleta', description: 'Los datos recibidos no permiten confirmar el estado del seguimiento.' },
+};
+
+export function monitorPresentation(check: NonNullable<PulsoData['lastCheck']>, old: boolean, queryFailed: boolean) {
+  const connection = { ok: 'Consulta completada', missing: 'Consulta completada, sin datos del bus', unavailable: 'No se pudo consultar' }[check.sourceStatus];
+  if (old) return { label: 'Sin revisión reciente', tone: 'warning' as const, connection };
+  if (queryFailed) return { label: 'Última revisión guardada', tone: 'warning' as const, connection };
+  if (check.sourceStatus === 'unavailable') return { label: 'Revisión con fallo de conexión', tone: 'warning' as const, connection };
+  if (check.sourceStatus === 'missing') return { label: 'Revisión sin datos del bus', tone: 'warning' as const, connection };
+  return { label: 'Revisión reciente', tone: 'success' as const, connection };
+}
 export function formatMoment(at: number | null): string {
   if (at === null) return 'Sin información';
   return new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Lima' }).format(at);

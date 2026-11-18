@@ -147,9 +147,11 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
     await click('Actualizar');
     await browser.waitFor(includes('Sin incidentes registrados'));
     await browser.waitFor(includes('Sin incidentes activos'));
-    assert.ok(await browser.evaluate(includes('Recorrido activo · Publicación reciente')));
-    assert.ok(await browser.evaluate(includes('Inicio observado del recorrido (Lima)')));
-    assert.ok(await browser.evaluate(includes('Tiempo de recorrido observado')));
+    assert.ok(await browser.evaluate(includes('Seguimiento funcionando')));
+    assert.ok(await browser.evaluate(includes('Inicio observado')));
+    assert.ok(await browser.evaluate(includes('Tiempo de recorrido')));
+    assert.deepEqual(await browser.evaluate('[...document.querySelectorAll(".pulso-screen h2")].map(h => h.textContent)'),
+      ['Estado del recorrido', 'Estado de PULSO', 'Incidentes']);
     const start = (await db.prepare('SELECT observed_trip_started_at FROM tracking_state').first())?.observed_trip_started_at;
     assert.ok(typeof start === 'number');
     assert.equal(await browser.evaluate(`document.querySelector('.pulso-summary .card').innerText.includes(new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Lima' }).format(${start}))`), true);
@@ -162,13 +164,14 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
     }
     const before = await snapshot();
     await click('Actualizar');
-    await browser.waitFor(includes('Recorrido activo · Publicación interrumpida'));
-    const sizes = await browser.evaluate(`[...document.querySelectorAll('.card')].filter(c => c.querySelector('ul'))
+    await browser.waitFor(includes('Seguimiento interrumpido'));
+    const sizes = await browser.evaluate(`[...document.querySelectorAll('.pulso-incident-panel section')]
       .map(c => c.querySelectorAll('li').length)`);
     assert.deepEqual(sizes, [1, 20]);
     assert.ok(await browser.evaluate(includes('Abierto')));
     assert.ok(await browser.evaluate(includes('Cerrado')));
-    assert.ok(await browser.evaluate(includes('Resultado: Recorrido declarado inactivo')));
+    assert.ok(await browser.evaluate(includes('Recorrido declarado inactivo')));
+    assert.ok(await browser.evaluate(includes('Duración registrada')));
     assert.equal(await snapshot(), before);
     assert.ok(requests.length > 0);
     assert.ok(requests.every(r => r.method === 'GET' && r.pathname === '/api/pulso'));
@@ -181,7 +184,7 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
     const before = await snapshot();
     await click('Actualizar');
     await browser.waitFor(includes('Datos antiguos:'));
-    assert.ok(await browser.evaluate(includes('Publicación interrumpida')));
+    assert.ok(await browser.evaluate(includes('Último estado: Seguimiento interrumpido')));
     assert.ok(await browser.evaluate(includes('45 min (hasta la última comprobación guardada)')));
     assert.equal(await snapshot(), before);
   });
@@ -226,15 +229,18 @@ describe('Central → proxy Vite → Worker real → misma D1 local', { timeout:
     await browser.waitFor(includes('Datos antiguos:'));
     assert.deepEqual(exceptions, []);
   });
-  it('no inventa inicio anterior, muestra No aplica al detener y conserva el inicio al volver a Central', async () => {
+  it('no inventa inicio anterior, oculta tiempos al detener y conserva el inicio al volver a Central', async () => {
     await db.prepare('UPDATE tracking_state SET observed_trip_started_at = NULL').run();
     await click('Actualizar');
-    await browser.waitFor(includes('Sin información disponible'));
-    assert.ok(await browser.evaluate(includes('No calculable')));
+    await browser.waitFor(includes('Inicio no determinado'));
+    assert.equal(await browser.evaluate(includes('Tiempo de recorrido')), false);
     await evaluate({ isActive: false });
     await click('Actualizar');
-    await browser.waitFor(includes('Recorrido inactivo'));
-    assert.equal(await browser.evaluate(`[...document.querySelectorAll('.pulso-summary .card dd')].filter(dd => dd.textContent === 'No aplica').length`), 2);
+    await browser.waitFor(includes('Bus fuera de recorrido'));
+    assert.equal(await browser.evaluate(includes('Inicio observado')), false);
+    assert.equal(await browser.evaluate(includes('Tiempo de recorrido')), false);
+    assert.equal(await browser.evaluate(includes('No aplica')), false);
+    assert.ok(await browser.evaluate(includes('Sin verificación independiente')));
     await evaluate({ isActive: true, timestamp: Date.now() });
     await click('Actualizar');
     await browser.waitFor(includes('0 min'));

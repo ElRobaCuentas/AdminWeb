@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { createServer } from 'vite';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { startBrowser } from './pulsoBrowser.ts';
 
 // Pantalla y servicio reales; reloj y respuestas HTTP controlados, sin recursos remotos.
 const entry = `
+import '/src/index.css';
 import { createElement, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PulsoScreen } from '/src/features/pulso/screen/PulsoScreen.tsx';
@@ -55,14 +59,14 @@ window.polling = {
     }
     offset = end;
   },
-  respond: (index, status = 200, fresh = false) => {
+  respond: (index, status = 200, fresh = false, scenario = {}) => {
     const evaluatedAt = fresh ? Date.now() : base;
     const ageMs = Date.now() - evaluatedAt;
     requests[index].resolve(Response.json({
       status: 'observed', busId: 'POLLING-TEST',
       observedState: { classification: 'active-publishing', monitoringActive: true, declaredActive: true,
-        publicationTimestamp: evaluatedAt, observedTripStartedAt: base - 2700000 },
-      lastCheck: { evaluatedAt, ageMs, staleAfterMs: 180000, freshness: ageMs > 180000 ? 'old' : 'recent', sourceStatus: 'ok' },
+        publicationTimestamp: evaluatedAt, observedTripStartedAt: base - 2700000, ...scenario.state },
+      lastCheck: { evaluatedAt, ageMs, staleAfterMs: 180000, freshness: ageMs > 180000 ? 'old' : 'recent', sourceStatus: 'ok', ...scenario.check },
       activeIncidents: [], recentIncidents: [],
     }, { status }));
   },
@@ -135,7 +139,7 @@ describe('PULSO: refresco en navegador con reloj controlado y StrictMode', () =>
     await respond(2);
     assert.ok(await browser.evaluate(includes('45 min (hasta la última comprobación guardada)')));
     assert.ok(await browser.evaluate(includes('Datos antiguos:')));
-    assert.equal(await browser.evaluate(includes('Comprobación reciente')), false);
+    assert.equal(await browser.evaluate(includes('Revisión reciente')), false);
     await refresh();
     await browser.waitFor('window.polling.requests.length === 4');
     assert.ok(await browser.evaluate(includes('Datos antiguos:')));
@@ -155,13 +159,13 @@ describe('PULSO: refresco en navegador con reloj controlado y StrictMode', () =>
     await respond(5, 200, true);
     assert.equal(await browser.evaluate(includes('Error de consulta')), false);
     assert.equal(await browser.evaluate(includes('Datos antiguos:')), false);
-    assert.ok(await browser.evaluate(includes('Comprobación reciente')));
+    assert.ok(await browser.evaluate(includes('Revisión reciente')));
     await refresh();
     await browser.waitFor('window.polling.requests.length === 7');
     await respond(6, 503);
     assert.ok(await browser.evaluate(includes('hasta la última comprobación guardada')));
-    assert.equal(await browser.evaluate(includes('Comprobación reciente')), false);
-    assert.ok(await browser.evaluate(includes('Última comprobación guardada')));
+    assert.equal(await browser.evaluate(includes('Revisión reciente')), false);
+    assert.ok(await browser.evaluate(includes('Última revisión guardada')));
   });
   it('una denegación retira los datos y una consulta posterior reutiliza la sesión', async () => {
     await refresh();
@@ -197,7 +201,7 @@ describe('PULSO: refresco en navegador con reloj controlado y StrictMode', () =>
     await refresh();
     await browser.waitFor('window.polling.requests.length === 12');
     await respond(11, 200, true);
-    assert.ok(await browser.evaluate(includes('Comprobación reciente')));
+    assert.ok(await browser.evaluate(includes('Revisión reciente')));
     await refresh();
     await browser.waitFor('window.polling.requests.length === 13');
     await respond(12, 503);
@@ -205,9 +209,60 @@ describe('PULSO: refresco en navegador con reloj controlado y StrictMode', () =>
     await browser.waitFor(includes('Datos antiguos:'));
     assert.ok(await browser.evaluate(includes('Error de consulta')));
     assert.equal(await count(), 14);
-    assert.equal(await browser.evaluate(includes('Comprobación reciente')), false);
+    assert.equal(await browser.evaluate(includes('Revisión reciente')), false);
     await browser.evaluate('window.polling.leave()');
     await browser.waitFor('window.polling.intervalCount() === 0');
     assert.deepEqual(exceptions, []);
+  });
+  it('presenta los estados operativos sin confundir recorrido, conexión y antigüedad, también en móvil', async t => {
+    const evidence = await mkdtemp(path.join(tmpdir(), 'opencode/pulso-redesign-'));
+    let previousRequests = await count();
+    await browser.evaluate('window.polling.mount()');
+    const scenarios = [
+      { name: 'inactive', state: { classification: 'inactive-unconfirmed', monitoringActive: false, declaredActive: false, observedTripStartedAt: null }, title: 'Bus fuera de recorrido' },
+      { name: 'active', state: { classification: 'active-publishing' }, title: 'Seguimiento funcionando' },
+      { name: 'interrupted', state: { classification: 'active-publication-stale' }, title: 'Seguimiento interrumpido' },
+      { name: 'recovering', state: { classification: 'recovering-pending' }, title: 'Seguimiento en recuperación' },
+      { name: 'recovered', state: { classification: 'recovering-confirmed' }, title: 'Recuperación confirmada' },
+      { name: 'unavailable', state: { classification: 'source-unavailable', declaredActive: null }, check: { sourceStatus: 'unavailable' }, title: 'Estado del recorrido sin confirmar' },
+      { name: 'missing', state: { classification: 'insufficient-data', declaredActive: null, observedTripStartedAt: null }, check: { sourceStatus: 'missing' }, title: 'Información del recorrido incompleta' },
+    ];
+    for (const [i, scenario] of scenarios.entries()) {
+      if (i) await refresh();
+      await browser.waitFor(`window.polling.requests.length === ${++previousRequests}`);
+      await browser.evaluate(`window.polling.respond(window.polling.requests.length - 1, 200, true, ${JSON.stringify(scenario)})`);
+      await browser.waitFor(includes(scenario.title));
+      await browser.waitFor('!![...document.querySelectorAll("button")].find(b => b.textContent === "Actualizar" && !b.disabled)');
+      assert.deepEqual(await browser.evaluate('[...document.querySelectorAll(".pulso-screen h2")].map(h => h.textContent)'), ['Estado del recorrido', 'Estado de PULSO', 'Incidentes']);
+      if (scenario.name === 'inactive') {
+        assert.equal(await browser.evaluate(includes('No aplica')), false);
+        assert.equal(await browser.evaluate(includes('Tiempo de recorrido')), false);
+        assert.ok(await browser.evaluate(includes('No se esperan nuevas ubicaciones.')));
+        await browser.evaluate('document.querySelector(".pulso-technical summary").click()');
+        assert.ok(await browser.evaluate(includes('Finalización no confirmada')));
+        await browser.evaluate('document.querySelector(".pulso-technical summary").click()');
+      }
+      if (scenario.name === 'unavailable') {
+        assert.ok(await browser.evaluate(includes('Revisión con fallo de conexión')));
+        assert.equal(await browser.evaluate(includes('Revisión reciente')), false);
+        assert.equal(await browser.evaluate(includes('Bus fuera de recorrido')), false);
+      }
+      if (scenario.name === 'missing') {
+        assert.ok(await browser.evaluate(includes('Inicio no determinado')));
+        assert.equal(await browser.evaluate(includes('Tiempo de recorrido')), false);
+        assert.ok(await browser.evaluate(includes('Revisión sin datos del bus')));
+      }
+      for (const width of [1280, 360]) {
+        await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+        await browser.waitFor(`window.innerWidth === ${width}`);
+        assert.ok(await browser.evaluate('document.documentElement.scrollWidth <= window.innerWidth'));
+        const image = await browser.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+        await writeFile(path.join(evidence, `${scenario.name}-${width}.png`), Buffer.from(image.data, 'base64'));
+      }
+    }
+    await browser.evaluate('window.polling.leave()');
+    await browser.waitFor('window.polling.intervalCount() === 0');
+    assert.deepEqual(exceptions, []);
+    t.diagnostic(`Capturas del rediseño: ${evidence}`);
   });
 });

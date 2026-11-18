@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { getPulso, parsePulsoData, PulsoQueryError } from '../src/features/pulso/services/pulso_service.ts';
-import { checkAge, formatDuration, formatMoment, observedTripDetails, stateLabels } from '../src/features/pulso/pulsoPresentation.ts';
+import { checkAge, formatDuration, formatMoment, monitorPresentation, observedTripDetails, stateLabels, tripLabels } from '../src/features/pulso/pulsoPresentation.ts';
 import { readPulsoApiUrl } from '../src/shared/config/env.ts';
 
 const empty = { status: 'no-data', busId: 'TEST', observedState: null, lastCheck: null, activeIncidents: [], recentIncidents: [] };
@@ -102,6 +102,22 @@ describe('cliente PULSO: contrato, sesión y consulta exclusiva de lectura', () 
   });
 });
 describe('presentación sin reevaluar el seguimiento', () => {
+  it('separa el estado del recorrido de la revisión del monitor y sus fallos', () => {
+    const check = parsePulsoData(observed).lastCheck!;
+    assert.equal(tripLabels['inactive-unconfirmed'].label, 'Bus fuera de recorrido');
+    assert.equal(tripLabels['active-publishing'].label, 'Seguimiento funcionando');
+    assert.equal(tripLabels['active-publication-stale'].label, 'Seguimiento interrumpido');
+    assert.equal(tripLabels['recovering-confirmed'].label, 'Recuperación confirmada');
+    assert.equal(tripLabels['source-unavailable'].label, 'Estado del recorrido sin confirmar');
+    assert.equal(monitorPresentation(check, false, false).label, 'Revisión reciente');
+    assert.equal(monitorPresentation(check, true, false).label, 'Sin revisión reciente');
+    assert.equal(monitorPresentation(check, false, true).label, 'Última revisión guardada');
+    const failed = monitorPresentation({ ...check, sourceStatus: 'unavailable' }, false, false);
+    assert.equal(failed.label, 'Revisión con fallo de conexión');
+    assert.equal(failed.connection, 'No se pudo consultar');
+    assert.equal(failed.tone, 'warning');
+    assert.equal(monitorPresentation({ ...check, sourceStatus: 'missing' }, false, false).label, 'Revisión sin datos del bus');
+  });
   it('acepta API anterior, nueva con null o inicio válido, y rechaza fechas incoherentes', () => {
     for (const start of [undefined, null, 1000]) {
       assert.doesNotThrow(() => parsePulsoData({ ...observed,

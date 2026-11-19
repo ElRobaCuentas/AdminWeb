@@ -337,6 +337,7 @@ npm run lint           # ejecuta Oxlint
 La documentación compartida está en [BurritoDocs](https://github.com/ElRobaCuentas/BurritoDocs)
 (`C:\Movil\docs` en el workspace):
 
+- [Versionado y publicación](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/VERSIONADO_Y_PUBLICACION.md): política del MVP e identificación de despliegues de Central y PULSO.
 - [Arquitectura](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/ARCHITECTURE.md): flujos e implementación entre aplicaciones.
 - [PULSO](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/PULSO.md): referencia técnica y operativa del monitor y validación de su MVP.
 - [Esquema Firebase](https://github.com/ElRobaCuentas/BurritoDocs/blob/main/FIREBASE_SCHEMA.md): nodos, payloads y permisos.
